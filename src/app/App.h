@@ -3,7 +3,9 @@
 #include "app/Gui.h"
 #include "camera/Camera2D.h"
 #include "camera/OrbitCamera.h"
+#include "fractal/Bifurcation.h"
 #include "fractal/Mandel2D.h"
+#include "fractal/OrbitTracer.h"
 #include "fractal/Palette.h"
 #include "fractal/Raymarcher.h"
 #include "fractal/Terrain.h"
@@ -13,10 +15,11 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace fb {
 
-enum class ViewMode : int { Plane2D = 0, Heightfield = 1, Fractal3D = 2, Count };
+enum class ViewMode : int { Plane2D = 0, Heightfield = 1, Fractal3D = 2, LogisticMap = 3, Count };
 
 struct AppOptions {
     int width = 1280;
@@ -30,6 +33,7 @@ struct AppOptions {
     int palette = 0;
     ViewMode mode = ViewMode::Plane2D;
     int formula = 0; // Formula3D
+    std::optional<std::pair<double, double>> traceC; // pin the 2D orbit tracer to this c
 };
 
 class App {
@@ -43,7 +47,8 @@ private:
     void handleInput(float dt);
     void handleInput2D(float dt, double mx, double my, double scroll, bool mouseFree, bool keysFree);
     void handleInput3D(float dt, double mx, double my, double scroll, bool mouseFree, bool keysFree);
-    void handleInputFractal3D(float dt, double mx, double my, double scroll, bool mouseFree, bool keysFree);
+    void handleInputOrbit(OrbitCamera& cam, float dt, double mx, double my, double scroll, bool mouseFree,
+                          bool keysFree);
     void resetCameras();
     void animate(double time);
     void drawUi();
@@ -60,6 +65,8 @@ private:
     Mandel2D m_mandel;
     Terrain m_terrain;
     Raymarcher m_raymarcher;
+    Bifurcation m_bifurcation;
+    OrbitTracer m_orbitTracer;
 
     ViewMode m_mode = ViewMode::Plane2D;
     Camera2D m_camera;   // region of the complex plane (also the terrain extent)
@@ -68,6 +75,14 @@ private:
     MarchParams m_march;
     float m_renderScale = 0.75f;
     bool m_animate = false;   // sweeps sliceW / power / Julia constant over time
+    OrbitCamera m_logisticOrbit;
+    BifurcationParams m_bif;
+    float m_logisticR = 3.5f;
+    bool m_highlightR = true;
+    bool m_autoRotate = false;
+    bool m_showOrbit = false;
+    int m_orbitEscape = -1;
+    double m_orbitC[2] = {0.0, 0.0};
     FractalParams m_params;
     SceneParams m_scene;
     float m_lightAzimuth = 0.9f;

@@ -19,7 +19,9 @@ add_executable(fracbrot
   src/app/Gui.cpp
   src/gfx/Context.cpp
   src/gfx/Readback.cpp
+  src/fractal/Bifurcation.cpp
   src/fractal/Mandel2D.cpp
+  src/fractal/OrbitTracer.cpp
   src/fractal/Raymarcher.cpp
   src/fractal/Palette.cpp
   src/fractal/Terrain.cpp
