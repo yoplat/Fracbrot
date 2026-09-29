@@ -1,6 +1,7 @@
 #include "fractal/Terrain.h"
 
 #include "fractal/Palette.h"
+#include "gfx/Buffers.h"
 #include "gfx/Context.h"
 #include "gfx/Shader.h"
 #include "shaders/common.wgsl.h"
@@ -11,22 +12,10 @@
 
 namespace fb {
 
-namespace {
-
-wgpu::Buffer createUniform(const wgpu::Device& device, uint64_t size, const char* label) {
-    wgpu::BufferDescriptor desc;
-    desc.label = label;
-    desc.size = size;
-    desc.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
-    return device.CreateBuffer(&desc);
-}
-
-} // namespace
-
 void Terrain::init(const Context& ctx, const PaletteTexture& palette) {
     m_palette = &palette;
-    m_params = createUniform(ctx.device, sizeof(FractalParams), "terrain params");
-    m_scene = createUniform(ctx.device, sizeof(SceneParams), "terrain scene");
+    m_params = createUniformBuffer(ctx.device, sizeof(FractalParams), "terrain params");
+    m_scene = createUniformBuffer(ctx.device, sizeof(SceneParams), "terrain scene");
 
     wgpu::ShaderModule heightShader = createShader(ctx.device, {kCommonWgsl, kHeightmapWgsl}, "heightmap");
     wgpu::ComputePipelineDescriptor cDesc;

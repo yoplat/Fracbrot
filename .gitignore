@@ -4,3 +4,4 @@ build/
 fracbrot_*.png
 compile_commands.json
 .clangd/
+.claude/worktrees/

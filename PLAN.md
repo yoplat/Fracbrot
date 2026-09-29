@@ -10,7 +10,7 @@ src/
   app/       main.cpp, App (per-frame callback, input, ImGui UI)
   platform/  window + surface (GLFW native, canvas on web)
   gfx/       thin Device/Pipeline/Buffer/Texture layer over webgpu.h
-  fractal/   Mandel2D, Heightfield, Mandelbulb, perturbation (CPU ref orbit)
+  fractal/   Mandel2D, Terrain, Raymarcher (quaternion/Julia/bulb), Bifurcation, perturbation
   camera/    Camera2D (pan/zoom), OrbitCamera3D
 shaders/     *.wgsl, embedded at build time
 web/         shell.html
@@ -29,7 +29,8 @@ Web-friendly rules:
 - [x] 1 `feat:` 2D Mandelbrot fullscreen pass, pan/zoom, iteration control (ImGui)
 - [x] 2 `feat:` smooth coloring, palette texture, screenshot export
 - [x] 3 `feat:` mode switch 2D/3D, orbit camera, heightfield terrain
-- [ ] 4 `feat:` Mandelbulb ray-marcher (DE, soft shadows, AO, orbit traps)
+- [x] 4 `feat:` 3D ray-marcher: quaternion Mandelbrot (4D slice/tilt, default), quaternion Julia, Mandelbulb; DE, soft shadows, AO, orbit traps
+- [ ] 4b `feat:` logistic map mode: bifurcation diagram standing on the Mandelbrot real axis in 3D (c = r(2-r)/4), 2D orbit tracer
 - [ ] 5 `feat:` web build (Emscripten preset, canvas surface, shell.html)
 - [ ] 6 `feat:` deep zoom via perturbation (high-precision CPU reference orbit)
 - [ ] 7 `chore:` CI matrix (macOS, Linux/Vulkan, web)

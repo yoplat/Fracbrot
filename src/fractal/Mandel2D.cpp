@@ -1,6 +1,7 @@
 #include "fractal/Mandel2D.h"
 
 #include "fractal/Palette.h"
+#include "gfx/Buffers.h"
 #include "gfx/Context.h"
 #include "gfx/Shader.h"
 #include "shaders/common.wgsl.h"
@@ -27,11 +28,7 @@ void Mandel2D::init(const Context& ctx, const PaletteTexture& palette) {
     desc.fragment = &fragment;
     m_pipeline = ctx.device.CreateRenderPipeline(&desc);
 
-    wgpu::BufferDescriptor bufDesc;
-    bufDesc.label = "mandel2d params";
-    bufDesc.size = sizeof(FractalParams);
-    bufDesc.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
-    m_uniforms = ctx.device.CreateBuffer(&bufDesc);
+    m_uniforms = createUniformBuffer(ctx.device, sizeof(FractalParams), "mandel2d params");
 
     wgpu::BindGroupEntry entries[3];
     entries[0].binding = 0;

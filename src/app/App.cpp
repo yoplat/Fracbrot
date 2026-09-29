@@ -13,7 +13,18 @@ namespace fb {
 
 namespace {
 
-const char* const kModeNames[] = {"2D plane", "Heightfield"};
+const char* const kModeNames[] = {"2D plane", "Heightfield", "3D fractal"};
+const char* const kFormulaNames[] = {"Quaternion Mandelbrot", "Quaternion Julia", "Mandelbulb"};
+static_assert(std::size(kFormulaNames) == size_t(Formula3D::Count));
+
+OrbitCamera marchHome() {
+    OrbitCamera cam;
+    cam.target = {-0.75f, 0.0f, 0.0f};
+    cam.yaw = 0.45f;   // mostly side-on, so the real-axis needle is visible
+    cam.pitch = 0.3f;
+    cam.distance = 3.2f;
+    return cam;
+}
 static_assert(std::size(kModeNames) == size_t(ViewMode::Count));
 
 } // namespace
@@ -31,13 +42,49 @@ bool App::init(const AppOptions& opts) {
     setPalette(opts.palette);
     m_mandel.init(m_ctx, m_palette);
     m_terrain.init(m_ctx, m_palette);
+    m_raymarcher.init(m_ctx, m_palette);
 
+    applyFormulaDefaults(m_march, Formula3D(std::clamp(opts.formula, 0, int(Formula3D::Count) - 1)));
+    resetCameras();
+    m_marchOrbit.target = m_march.boundCenter;
     if (opts.camera) m_camera = *opts.camera;
-    if (opts.orbit) m_orbit = *opts.orbit;
     m_mode = opts.mode;
+    if (opts.orbit) {
+        OrbitCamera& cam = activeOrbit();
+        cam.yaw = opts.orbit->yaw;
+        cam.pitch = opts.orbit->pitch;
+        cam.distance = opts.orbit->distance;
+    }
     m_params.maxIter = opts.maxIter;
     m_lastTime = glfwGetTime();
     return true;
+}
+
+void App::resetCameras() {
+    m_camera.reset();
+    m_orbit.reset();
+    m_marchOrbit = marchHome();
+}
+
+OrbitCamera& App::activeOrbit() { return m_mode == ViewMode::Fractal3D ? m_marchOrbit : m_orbit; }
+
+void App::animate(double time) {
+    if (!m_animate) return;
+    const float t = float(time);
+    switch (m_march.formula) {
+    case Formula3D::QuatMandelbrot:
+        m_march.sliceW = 0.5f * std::sin(t * 0.25f);
+        break;
+    case Formula3D::QuatJulia:
+        m_march.juliaC = glm::vec4(-0.291f + 0.15f * std::cos(t * 0.21f), -0.399f + 0.2f * std::sin(t * 0.17f),
+                                   0.339f + 0.15f * std::cos(t * 0.13f), 0.437f + 0.15f * std::sin(t * 0.11f));
+        break;
+    case Formula3D::Mandelbulb:
+        m_march.power = 8.0f + 4.0f * std::sin(t * 0.2f);
+        break;
+    case Formula3D::Count:
+        break;
+    }
 }
 
 bool App::keyPressed(int key) {
@@ -57,18 +104,17 @@ void App::handleInput(float dt) {
     if (keysFree) {
         if (keyPressed(GLFW_KEY_1)) m_mode = ViewMode::Plane2D;
         if (keyPressed(GLFW_KEY_2)) m_mode = ViewMode::Heightfield;
+        if (keyPressed(GLFW_KEY_3)) m_mode = ViewMode::Fractal3D;
         if (keyPressed(GLFW_KEY_TAB)) m_mode = ViewMode((int(m_mode) + 1) % int(ViewMode::Count));
         if (keyPressed(GLFW_KEY_P)) m_screenshotRequested = true;
-        if (m_window.keyDown(GLFW_KEY_R)) {
-            m_camera.reset();
-            m_orbit.reset();
-        }
+        if (m_window.keyDown(GLFW_KEY_R)) resetCameras();
     }
 
-    if (m_mode == ViewMode::Plane2D)
-        handleInput2D(dt, mx, my, scroll, mouseFree, keysFree);
-    else
-        handleInput3D(dt, mx, my, scroll, mouseFree, keysFree);
+    switch (m_mode) {
+    case ViewMode::Plane2D: handleInput2D(dt, mx, my, scroll, mouseFree, keysFree); break;
+    case ViewMode::Heightfield: handleInput3D(dt, mx, my, scroll, mouseFree, keysFree); break;
+    default: handleInputFractal3D(dt, mx, my, scroll, mouseFree, keysFree); break;
+    }
 
     m_lastCursor[0] = mx;
     m_lastCursor[1] = my;
@@ -144,6 +190,32 @@ void App::handleInput3D(float dt, double mx, double my, double scroll, bool mous
     }
 }
 
+void App::handleInputFractal3D(float dt, double mx, double my, double scroll, bool mouseFree, bool keysFree) {
+    OrbitCamera& cam = m_marchOrbit;
+    const bool left = m_window.mouseDown(GLFW_MOUSE_BUTTON_LEFT);
+    if (mouseFree) {
+        if (scroll != 0.0) cam.dolly(float(std::pow(0.9, scroll)));
+        if (m_dragging && left)
+            cam.rotate(-float(mx - m_lastCursor[0]) * 0.005f, float(my - m_lastCursor[1]) * 0.005f);
+        m_dragging = left;
+    } else {
+        m_dragging = false;
+    }
+
+    if (keysFree) {
+        // Fly the orbit target; speed scales with distance so close-ups stay controllable.
+        const float step = 0.6f * dt * cam.distance;
+        glm::vec3 move{0.0f};
+        if (m_window.keyDown(GLFW_KEY_W) || m_window.keyDown(GLFW_KEY_UP)) move += cam.groundForward();
+        if (m_window.keyDown(GLFW_KEY_S) || m_window.keyDown(GLFW_KEY_DOWN)) move -= cam.groundForward();
+        if (m_window.keyDown(GLFW_KEY_D) || m_window.keyDown(GLFW_KEY_RIGHT)) move += cam.groundRight();
+        if (m_window.keyDown(GLFW_KEY_A) || m_window.keyDown(GLFW_KEY_LEFT)) move -= cam.groundRight();
+        if (m_window.keyDown(GLFW_KEY_E)) move.y += 1.0f;
+        if (m_window.keyDown(GLFW_KEY_Q)) move.y -= 1.0f;
+        cam.target += move * step;
+    }
+}
+
 void App::drawUi() {
     ImGui::SetNextWindowPos({10, 10}, ImGuiCond_FirstUseEver);
     ImGui::Begin("Fracbrot", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
@@ -161,10 +233,7 @@ void App::drawUi() {
     ImGui::Text("        %.15f", m_camera.cy);
     ImGui::Text("zoom    %.3e", 1.2 / m_camera.scale);
     if (m_camera.scale < 1e-5) ImGui::TextColored({1, 0.6f, 0.2f, 1}, "float precision limit reached");
-    if (ImGui::Button("reset (R)")) {
-        m_camera.reset();
-        m_orbit.reset();
-    }
+    if (ImGui::Button("reset (R)")) resetCameras();
 
     if (m_mode == ViewMode::Heightfield) {
         ImGui::SeparatorText("terrain");
@@ -177,6 +246,38 @@ void App::drawUi() {
         if (ImGui::Combo("grid", &grid, kGridNames, int(std::size(kGrids)))) m_scene.gridSize = kGrids[grid];
         ImGui::SliderAngle("light azimuth", &m_lightAzimuth, -180.0f, 180.0f);
         ImGui::SliderAngle("light elevation", &m_lightElevation, 5.0f, 90.0f);
+    }
+
+    if (m_mode == ViewMode::Fractal3D) {
+        ImGui::SeparatorText("3D fractal");
+        int formula = int(m_march.formula);
+        if (ImGui::Combo("formula", &formula, kFormulaNames, int(Formula3D::Count))) {
+            applyFormulaDefaults(m_march, Formula3D(formula));
+            m_marchOrbit.target = m_march.boundCenter;
+        }
+        int iters = int(m_march.iterations);
+        if (ImGui::SliderInt("3D iterations", &iters, 2, 64)) m_march.iterations = uint32_t(iters);
+        if (m_march.formula == Formula3D::Mandelbulb) {
+            ImGui::SliderFloat("power", &m_march.power, 1.0f, 16.0f);
+        } else {
+            ImGui::SliderFloat("slice w", &m_march.sliceW, -1.5f, 1.5f);
+            ImGui::SliderAngle("4D tilt", &m_march.tilt, -90.0f, 90.0f);
+        }
+        if (m_march.formula == Formula3D::QuatJulia) ImGui::SliderFloat4("julia c", &m_march.juliaC.x, -1.5f, 1.5f);
+        ImGui::Checkbox("animate", &m_animate);
+
+        ImGui::SliderFloat("detail", &m_march.detail, 0.25f, 4.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+        int steps = int(m_march.maxSteps);
+        if (ImGui::SliderInt("max steps", &steps, 32, 1000)) m_march.maxSteps = uint32_t(steps);
+        ImGui::SliderFloat("render scale", &m_renderScale, 0.25f, 2.0f);
+        ImGui::SliderFloat("trap color", &m_march.trapMix, 0.0f, 1.0f);
+        ImGui::CheckboxFlags("shadows", &m_march.flags, kMarchShadows);
+        ImGui::SameLine();
+        ImGui::CheckboxFlags("AO", &m_march.flags, kMarchAO);
+        ImGui::SameLine();
+        ImGui::CheckboxFlags("reflections", &m_march.flags, kMarchReflect);
+        ImGui::SliderAngle("light azimuth", &m_lightAzimuth, -180.0f, 180.0f);
+        ImGui::SliderAngle("light elevation", &m_lightElevation, -90.0f, 90.0f);
     }
 
     ImGui::SeparatorText("color");
@@ -202,8 +303,10 @@ void App::drawUi() {
     ImGui::Separator();
     if (m_mode == ViewMode::Plane2D)
         ImGui::TextDisabled("drag: pan  scroll: zoom\nWASD/arrows: pan  Q/E: zoom");
-    else
+    else if (m_mode == ViewMode::Heightfield)
         ImGui::TextDisabled("drag: orbit  scroll: distance\nright/shift-drag, WASD: move region\nQ/E: zoom region");
+    else
+        ImGui::TextDisabled("drag: orbit  scroll: distance\nWASD: move target  Q/E: down/up");
     ImGui::End();
 }
 
@@ -213,11 +316,11 @@ void App::setPalette(int index) {
     m_palette.upload(m_ctx.queue, presets[size_t(m_paletteIndex)]);
 }
 
-void App::updateScene() {
+void App::updateScene(const OrbitCamera& orbit) {
     const float aspect = float(m_ctx.width) / float(std::max(m_ctx.height, 1u));
-    m_scene.viewProj = m_orbit.projection(aspect) * m_orbit.view();
+    m_scene.viewProj = orbit.projection(aspect) * orbit.view();
     m_scene.invViewProj = glm::inverse(m_scene.viewProj);
-    m_scene.camPos = glm::vec4(m_orbit.position(), 1.0f);
+    m_scene.camPos = glm::vec4(orbit.position(), 1.0f);
     const float ce = std::cos(m_lightElevation);
     m_scene.lightDir = glm::vec4(ce * std::sin(m_lightAzimuth), std::sin(m_lightElevation),
                                  ce * std::cos(m_lightAzimuth), 0.0f);
@@ -261,6 +364,7 @@ bool App::frame() {
     m_params.resolution[1] = float(m_ctx.height);
     m_params.time = float(now);
     m_params.colorOffset = std::fmod(m_params.colorOffset + m_colorCycleSpeed * dt + 1.0f, 1.0f);
+    animate(now);
 
     wgpu::CommandEncoder encoder = m_ctx.device.CreateCommandEncoder();
 
@@ -279,8 +383,12 @@ bool App::frame() {
         wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&sceneDesc);
         m_mandel.draw(pass);
         pass.End();
+    } else if (m_mode == ViewMode::Fractal3D) {
+        updateScene(m_marchOrbit);
+        m_raymarcher.update(m_ctx, m_params, m_scene, m_march, m_marchOrbit.fovY, m_renderScale);
+        m_raymarcher.render(encoder, target.view);
     } else {
-        updateScene();
+        updateScene(m_orbit);
         m_terrain.update(m_ctx, m_params, m_scene);
         m_terrain.compute(encoder);
 
@@ -321,6 +429,7 @@ bool App::frame() {
 
 void App::shutdown() {
     m_gui.shutdown();
+    m_raymarcher = {};
     m_terrain = {};
     m_mandel = {};
     m_ctx = {};

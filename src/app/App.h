@@ -5,6 +5,7 @@
 #include "camera/OrbitCamera.h"
 #include "fractal/Mandel2D.h"
 #include "fractal/Palette.h"
+#include "fractal/Raymarcher.h"
 #include "fractal/Terrain.h"
 #include "gfx/Context.h"
 #include "platform/Window.h"
@@ -15,7 +16,7 @@
 
 namespace fb {
 
-enum class ViewMode : int { Plane2D = 0, Heightfield = 1, Count };
+enum class ViewMode : int { Plane2D = 0, Heightfield = 1, Fractal3D = 2, Count };
 
 struct AppOptions {
     int width = 1280;
@@ -24,10 +25,11 @@ struct AppOptions {
     std::string screenshot;  // if set, save the last frame to this PNG before quitting
     bool hideUi = false;
     std::optional<Camera2D> camera;
-    std::optional<OrbitCamera> orbit;
+    std::optional<OrbitCamera> orbit; // applies to the starting 3D mode
     uint32_t maxIter = 256;
     int palette = 0;
     ViewMode mode = ViewMode::Plane2D;
+    int formula = 0; // Formula3D
 };
 
 class App {
@@ -41,9 +43,13 @@ private:
     void handleInput(float dt);
     void handleInput2D(float dt, double mx, double my, double scroll, bool mouseFree, bool keysFree);
     void handleInput3D(float dt, double mx, double my, double scroll, bool mouseFree, bool keysFree);
+    void handleInputFractal3D(float dt, double mx, double my, double scroll, bool mouseFree, bool keysFree);
+    void resetCameras();
+    void animate(double time);
     void drawUi();
     void setPalette(int index);
-    void updateScene();
+    void updateScene(const OrbitCamera& orbit);
+    OrbitCamera& activeOrbit();
     std::string nextScreenshotPath() const;
 
     AppOptions m_opts;
@@ -53,10 +59,15 @@ private:
     PaletteTexture m_palette;
     Mandel2D m_mandel;
     Terrain m_terrain;
+    Raymarcher m_raymarcher;
 
     ViewMode m_mode = ViewMode::Plane2D;
     Camera2D m_camera;   // region of the complex plane (also the terrain extent)
-    OrbitCamera m_orbit; // 3D viewpoint
+    OrbitCamera m_orbit; // heightfield viewpoint
+    OrbitCamera m_marchOrbit; // 3D fractal viewpoint
+    MarchParams m_march;
+    float m_renderScale = 0.75f;
+    bool m_animate = false;   // sweeps sliceW / power / Julia constant over time
     FractalParams m_params;
     SceneParams m_scene;
     float m_lightAzimuth = 0.9f;
