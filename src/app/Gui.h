@@ -14,7 +14,8 @@ public:
     void init(GLFWwindow* window, const Context& ctx);
     void shutdown();
     void beginFrame();
-    void render(const wgpu::RenderPassEncoder& pass);
+    // Finishes the ImGui frame; draws it into `pass` unless `draw` is false.
+    void render(const wgpu::RenderPassEncoder& pass, bool draw = true);
 
     bool wantsMouse() const;
     bool wantsKeyboard() const;

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ctime>
 
 namespace fb {
 
@@ -19,7 +20,9 @@ bool App::init(const AppOptions& opts) {
     if (!m_ctx.init(m_window.handle(), uint32_t(w), uint32_t(h))) return false;
 
     m_gui.init(m_window.handle(), m_ctx);
-    m_mandel.init(m_ctx);
+    m_palette.init(m_ctx.device);
+    setPalette(opts.palette);
+    m_mandel.init(m_ctx, m_palette);
     if (opts.camera) m_camera = *opts.camera;
     m_params.maxIter = opts.maxIter;
     m_lastTime = glfwGetTime();
@@ -56,6 +59,10 @@ void App::handleInput(float dt) {
         if (m_window.keyDown(GLFW_KEY_Q) || m_window.keyDown(GLFW_KEY_MINUS))
             m_camera.zoomAt(w / 2, h / 2, w, h, std::pow(4.0, dt));
         if (m_window.keyDown(GLFW_KEY_R)) m_camera.reset();
+
+        const bool p = m_window.keyDown(GLFW_KEY_P);
+        if (p && !m_screenshotKeyWasDown) m_screenshotRequested = true;
+        m_screenshotKeyWasDown = p;
     }
 }
 
@@ -75,9 +82,42 @@ void App::drawUi() {
     if (m_camera.scale < 1e-5) ImGui::TextColored({1, 0.6f, 0.2f, 1}, "float precision limit reached");
     if (ImGui::Button("reset (R)")) m_camera.reset();
 
+    ImGui::SeparatorText("color");
+    const auto presets = palettePresets();
+    if (ImGui::BeginCombo("palette", presets[size_t(m_paletteIndex)].name)) {
+        for (int i = 0; i < int(presets.size()); ++i) {
+            if (ImGui::Selectable(presets[size_t(i)].name, i == m_paletteIndex)) setPalette(i);
+        }
+        ImGui::EndCombo();
+    }
+    bool smooth = m_params.flags & kFlagSmooth;
+    if (ImGui::Checkbox("smooth", &smooth)) m_params.flags ^= kFlagSmooth;
+    ImGui::SliderFloat("density", &m_params.colorDensity, 0.05f, 8.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+    ImGui::SliderFloat("offset", &m_params.colorOffset, 0.0f, 1.0f);
+    ImGui::SliderFloat("cycle speed", &m_colorCycleSpeed, -1.0f, 1.0f);
+
+    ImGui::SeparatorText("export");
+    if (ImGui::Button("screenshot (P)")) m_screenshotRequested = true;
+    ImGui::SameLine();
+    ImGui::Checkbox("include UI", &m_screenshotWithUi);
+    if (!m_lastScreenshot.empty()) ImGui::TextDisabled("saved %s", m_lastScreenshot.c_str());
+
     ImGui::Separator();
     ImGui::TextDisabled("drag: pan  scroll: zoom\nWASD/arrows: pan  Q/E: zoom");
     ImGui::End();
+}
+
+void App::setPalette(int index) {
+    const auto presets = palettePresets();
+    m_paletteIndex = std::clamp(index, 0, int(presets.size()) - 1);
+    m_palette.upload(m_ctx.queue, presets[size_t(m_paletteIndex)]);
+}
+
+std::string App::nextScreenshotPath() const {
+    char buf[64];
+    const std::time_t t = std::time(nullptr);
+    std::strftime(buf, sizeof(buf), "fracbrot_%Y%m%d_%H%M%S.png", std::localtime(&t));
+    return buf;
 }
 
 bool App::frame() {
@@ -110,6 +150,7 @@ bool App::frame() {
     m_params.resolution[0] = float(m_ctx.width);
     m_params.resolution[1] = float(m_ctx.height);
     m_params.time = float(now);
+    m_params.colorOffset = std::fmod(m_params.colorOffset + m_colorCycleSpeed * dt + 1.0f, 1.0f);
     m_mandel.update(m_ctx.queue, m_params);
 
     wgpu::RenderPassColorAttachment color;
@@ -125,12 +166,17 @@ bool App::frame() {
     wgpu::CommandEncoder encoder = m_ctx.device.CreateCommandEncoder();
     wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&passDesc);
     m_mandel.draw(pass);
-    m_gui.render(pass);
+    const bool capture = m_screenshotRequested || (lastFrame && !m_opts.screenshot.empty());
+    m_gui.render(pass, !m_screenshotRequested || m_screenshotWithUi);
     pass.End();
     wgpu::CommandBuffer commands = encoder.Finish();
     m_ctx.queue.Submit(1, &commands);
 
-    if (lastFrame && !m_opts.screenshot.empty()) saveTexturePng(m_ctx, target.texture, m_opts.screenshot);
+    if (capture) {
+        const std::string path = m_screenshotRequested ? nextScreenshotPath() : m_opts.screenshot;
+        if (saveTexturePng(m_ctx, target.texture, path)) m_lastScreenshot = path;
+        m_screenshotRequested = false;
+    }
 
     m_ctx.present();
     ++m_frame;

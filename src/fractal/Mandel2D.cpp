@@ -1,12 +1,13 @@
 #include "fractal/Mandel2D.h"
 
+#include "fractal/Palette.h"
 #include "gfx/Context.h"
 #include "gfx/Shader.h"
 #include "shaders/mandel2d.wgsl.h"
 
 namespace fb {
 
-void Mandel2D::init(const Context& ctx) {
+void Mandel2D::init(const Context& ctx, const PaletteTexture& palette) {
     wgpu::ShaderModule shader = createShader(ctx.device, kMandel2dWgsl, "mandel2d");
 
     wgpu::ColorTargetState target;
@@ -31,15 +32,19 @@ void Mandel2D::init(const Context& ctx) {
     bufDesc.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
     m_uniforms = ctx.device.CreateBuffer(&bufDesc);
 
-    wgpu::BindGroupEntry entry;
-    entry.binding = 0;
-    entry.buffer = m_uniforms;
-    entry.size = sizeof(FractalParams);
+    wgpu::BindGroupEntry entries[3];
+    entries[0].binding = 0;
+    entries[0].buffer = m_uniforms;
+    entries[0].size = sizeof(FractalParams);
+    entries[1].binding = 1;
+    entries[1].textureView = palette.view;
+    entries[2].binding = 2;
+    entries[2].sampler = palette.sampler;
 
     wgpu::BindGroupDescriptor bgDesc;
     bgDesc.layout = m_pipeline.GetBindGroupLayout(0);
-    bgDesc.entryCount = 1;
-    bgDesc.entries = &entry;
+    bgDesc.entryCount = 3;
+    bgDesc.entries = entries;
     m_bindGroup = ctx.device.CreateBindGroup(&bgDesc);
 }
 

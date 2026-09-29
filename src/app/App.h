@@ -3,6 +3,7 @@
 #include "app/Gui.h"
 #include "camera/Camera2D.h"
 #include "fractal/Mandel2D.h"
+#include "fractal/Palette.h"
 #include "gfx/Context.h"
 #include "platform/Window.h"
 
@@ -20,6 +21,7 @@ struct AppOptions {
     bool hideUi = false;
     std::optional<Camera2D> camera;
     uint32_t maxIter = 256;
+    int palette = 0;
 };
 
 class App {
@@ -32,11 +34,14 @@ public:
 private:
     void handleInput(float dt);
     void drawUi();
+    void setPalette(int index);
+    std::string nextScreenshotPath() const;
 
     AppOptions m_opts;
     Window m_window;
     Context m_ctx;
     Gui m_gui;
+    PaletteTexture m_palette;
     Mandel2D m_mandel;
     Camera2D m_camera;
     FractalParams m_params;
@@ -45,6 +50,12 @@ private:
     double m_lastTime = 0.0;
     double m_lastCursor[2] = {0.0, 0.0};
     bool m_dragging = false;
+    int m_paletteIndex = 0;
+    float m_colorCycleSpeed = 0.0f;
+    bool m_screenshotRequested = false;
+    bool m_screenshotWithUi = false;
+    bool m_screenshotKeyWasDown = false;
+    std::string m_lastScreenshot;
 };
 
 } // namespace fb

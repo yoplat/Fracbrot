@@ -36,9 +36,9 @@ void Gui::beginFrame() {
     ImGui::NewFrame();
 }
 
-void Gui::render(const wgpu::RenderPassEncoder& pass) {
+void Gui::render(const wgpu::RenderPassEncoder& pass, bool draw) {
     ImGui::Render();
-    ImGui_ImplWGPU_RenderDrawData(ImGui::GetDrawData(), pass.Get());
+    if (draw) ImGui_ImplWGPU_RenderDrawData(ImGui::GetDrawData(), pass.Get());
 }
 
 bool Gui::wantsMouse() const { return ImGui::GetIO().WantCaptureMouse; }

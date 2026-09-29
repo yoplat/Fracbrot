@@ -18,6 +18,7 @@ void usage() {
         "  --size WxH          window size\n"
         "  --view X,Y,SCALE    initial center and half-height\n"
         "  --iter N            max iterations\n"
+        "  --palette N         palette preset index\n"
         "  --no-ui             hide the UI panel\n");
 }
 
@@ -39,6 +40,8 @@ int main(int argc, char** argv) {
             if (std::sscanf(argv[++i], "%lf,%lf,%lf", &cam.cx, &cam.cy, &cam.scale) == 3) opts.camera = cam;
         } else if (!std::strcmp(a, "--iter") && hasNext) {
             opts.maxIter = uint32_t(std::atoi(argv[++i]));
+        } else if (!std::strcmp(a, "--palette") && hasNext) {
+            opts.palette = std::atoi(argv[++i]);
         } else if (!std::strcmp(a, "--no-ui")) {
             opts.hideUi = true;
         } else {
