@@ -60,6 +60,8 @@ FetchContent_Declare(glm
   GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(glm)
 target_link_libraries(fracbrot_deps INTERFACE glm::glm)
+# WebGPU clip space has depth in [0, 1].
+target_compile_definitions(fracbrot_deps INTERFACE GLM_FORCE_DEPTH_ZERO_TO_ONE)
 
 # --- Dear ImGui -----------------------------------------------------------------
 FetchContent_Declare(imgui

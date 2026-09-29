@@ -1,5 +1,6 @@
 #include "app/App.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -19,6 +20,8 @@ void usage() {
         "  --view X,Y,SCALE    initial center and half-height\n"
         "  --iter N            max iterations\n"
         "  --palette N         palette preset index\n"
+        "  --mode N            0 = 2D plane, 1 = heightfield\n"
+        "  --orbit YAW,PITCH,DIST  3D camera (radians)\n"
         "  --no-ui             hide the UI panel\n");
 }
 
@@ -42,6 +45,11 @@ int main(int argc, char** argv) {
             opts.maxIter = uint32_t(std::atoi(argv[++i]));
         } else if (!std::strcmp(a, "--palette") && hasNext) {
             opts.palette = std::atoi(argv[++i]);
+        } else if (!std::strcmp(a, "--mode") && hasNext) {
+            opts.mode = fb::ViewMode(std::clamp(std::atoi(argv[++i]), 0, int(fb::ViewMode::Count) - 1));
+        } else if (!std::strcmp(a, "--orbit") && hasNext) {
+            fb::OrbitCamera orbit;
+            if (std::sscanf(argv[++i], "%f,%f,%f", &orbit.yaw, &orbit.pitch, &orbit.distance) == 3) opts.orbit = orbit;
         } else if (!std::strcmp(a, "--no-ui")) {
             opts.hideUi = true;
         } else {
@@ -59,5 +67,5 @@ int main(int argc, char** argv) {
     while (app.frame()) {}
     app.shutdown();
 #endif
-    return 0;
+    return fb::Context::errorCount > 0 ? 2 : 0;
 }

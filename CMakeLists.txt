@@ -21,6 +21,7 @@ add_executable(fracbrot
   src/gfx/Readback.cpp
   src/fractal/Mandel2D.cpp
   src/fractal/Palette.cpp
+  src/fractal/Terrain.cpp
   src/platform/Window.cpp
 )
 

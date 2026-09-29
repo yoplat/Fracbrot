@@ -2,11 +2,21 @@
 
 #include <webgpu/webgpu_cpp.h>
 
+#include <initializer_list>
+#include <string>
+
 namespace fb {
 
-inline wgpu::ShaderModule createShader(const wgpu::Device& device, const char* code, const char* label) {
+// Builds a shader module from WGSL chunks concatenated in order (e.g. common + main).
+inline wgpu::ShaderModule createShader(const wgpu::Device& device, std::initializer_list<const char*> chunks,
+                                       const char* label) {
+    std::string code;
+    for (const char* c : chunks) {
+        code += c;
+        code += '\n';
+    }
     wgpu::ShaderSourceWGSL wgsl;
-    wgsl.code = code;
+    wgsl.code = code.c_str();
     wgpu::ShaderModuleDescriptor desc;
     desc.nextInChain = &wgsl;
     desc.label = label;

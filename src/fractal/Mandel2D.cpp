@@ -3,12 +3,13 @@
 #include "fractal/Palette.h"
 #include "gfx/Context.h"
 #include "gfx/Shader.h"
+#include "shaders/common.wgsl.h"
 #include "shaders/mandel2d.wgsl.h"
 
 namespace fb {
 
 void Mandel2D::init(const Context& ctx, const PaletteTexture& palette) {
-    wgpu::ShaderModule shader = createShader(ctx.device, kMandel2dWgsl, "mandel2d");
+    wgpu::ShaderModule shader = createShader(ctx.device, {kCommonWgsl, kMandel2dWgsl}, "mandel2d");
 
     wgpu::ColorTargetState target;
     target.format = ctx.format;

@@ -53,11 +53,13 @@ bool Context::init(GLFWwindow* window, uint32_t w, uint32_t h) {
     wgpu::DeviceDescriptor deviceDesc;
     deviceDesc.SetUncapturedErrorCallback(
         [](const wgpu::Device&, wgpu::ErrorType type, wgpu::StringView msg) {
+            ++errorCount;
             std::fprintf(stderr, "webgpu error (%d): %.*s\n", int(type), int(msg.length), msg.data);
         });
     deviceDesc.SetDeviceLostCallback(wgpu::CallbackMode::AllowSpontaneous,
         [](const wgpu::Device&, wgpu::DeviceLostReason reason, wgpu::StringView msg) {
             if (reason == wgpu::DeviceLostReason::Destroyed) return;
+            ++errorCount;
             std::fprintf(stderr, "device lost (%d): %.*s\n", int(reason), int(msg.length), msg.data);
         });
     instance.WaitAny(
@@ -92,6 +94,13 @@ void Context::configure() {
     config.height = height;
     config.presentMode = wgpu::PresentMode::Fifo;
     surface.Configure(&config);
+
+    wgpu::TextureDescriptor depthDesc;
+    depthDesc.label = "depth";
+    depthDesc.size = {width, height, 1};
+    depthDesc.format = kDepthFormat;
+    depthDesc.usage = wgpu::TextureUsage::RenderAttachment;
+    depthView = device.CreateTexture(&depthDesc).CreateView();
 }
 
 void Context::resize(uint32_t w, uint32_t h) {

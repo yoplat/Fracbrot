@@ -28,7 +28,7 @@ Web-friendly rules:
 - [x] 0 `chore:` CMake + presets, Dawn/GLFW via FetchContent, window + clear color (Metal)
 - [x] 1 `feat:` 2D Mandelbrot fullscreen pass, pan/zoom, iteration control (ImGui)
 - [x] 2 `feat:` smooth coloring, palette texture, screenshot export
-- [ ] 3 `feat:` mode switch 2D/3D, orbit camera, heightfield terrain
+- [x] 3 `feat:` mode switch 2D/3D, orbit camera, heightfield terrain
 - [ ] 4 `feat:` Mandelbulb ray-marcher (DE, soft shadows, AO, orbit traps)
 - [ ] 5 `feat:` web build (Emscripten preset, canvas surface, shell.html)
 - [ ] 6 `feat:` deep zoom via perturbation (high-precision CPU reference orbit)

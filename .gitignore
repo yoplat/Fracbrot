@@ -2,3 +2,5 @@ build/
 .cache/
 .DS_Store
 fracbrot_*.png
+compile_commands.json
+.clangd/
