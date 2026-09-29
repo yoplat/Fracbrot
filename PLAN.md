@@ -25,7 +25,7 @@ Web-friendly rules:
 
 ## Phases
 
-- [ ] 0 `chore:` CMake + presets, Dawn/GLFW via FetchContent, window + clear color (Metal)
+- [x] 0 `chore:` CMake + presets, Dawn/GLFW via FetchContent, window + clear color (Metal)
 - [ ] 1 `feat:` 2D Mandelbrot fullscreen pass, pan/zoom, iteration control (ImGui)
 - [ ] 2 `feat:` smooth coloring, palette texture, screenshot export
 - [ ] 3 `feat:` mode switch 2D/3D, orbit camera, heightfield terrain
