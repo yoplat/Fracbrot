@@ -101,19 +101,19 @@ void Context::resize(uint32_t w, uint32_t h) {
     configure();
 }
 
-wgpu::TextureView Context::acquire() {
+Context::Frame Context::acquire() {
     wgpu::SurfaceTexture st;
     surface.GetCurrentTexture(&st);
     switch (st.status) {
     case wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal:
     case wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal:
-        return st.texture.CreateView();
+        return {st.texture, st.texture.CreateView()};
     case wgpu::SurfaceGetCurrentTextureStatus::Outdated:
     case wgpu::SurfaceGetCurrentTextureStatus::Lost:
         configure();
-        return nullptr;
+        return {};
     default:
-        return nullptr;
+        return {};
     }
 }
 

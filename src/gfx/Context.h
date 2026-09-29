@@ -12,8 +12,13 @@ public:
     bool init(GLFWwindow* window, uint32_t width, uint32_t height);
     void resize(uint32_t width, uint32_t height);
 
-    // Returns a view of the next swapchain texture, or null if the frame should be skipped.
-    wgpu::TextureView acquire();
+    struct Frame {
+        wgpu::Texture texture;
+        wgpu::TextureView view;
+        explicit operator bool() const { return bool(view); }
+    };
+    // Returns the next swapchain texture, or an empty frame if it should be skipped.
+    Frame acquire();
     void present();
 
     wgpu::Instance instance;

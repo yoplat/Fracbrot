@@ -60,3 +60,38 @@ FetchContent_Declare(glm
   GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(glm)
 target_link_libraries(fracbrot_deps INTERFACE glm::glm)
+
+# --- Dear ImGui -----------------------------------------------------------------
+FetchContent_Declare(imgui
+  GIT_REPOSITORY https://github.com/ocornut/imgui.git
+  GIT_TAG v1.92.9b
+  GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(imgui)
+add_library(imgui STATIC
+  ${imgui_SOURCE_DIR}/imgui.cpp
+  ${imgui_SOURCE_DIR}/imgui_draw.cpp
+  ${imgui_SOURCE_DIR}/imgui_tables.cpp
+  ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+  ${imgui_SOURCE_DIR}/imgui_demo.cpp
+  ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+  ${imgui_SOURCE_DIR}/backends/imgui_impl_wgpu.cpp)
+target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+if(APPLE AND NOT EMSCRIPTEN)
+  # The wgpu backend's optional surface helper uses Cocoa.
+  set_source_files_properties(${imgui_SOURCE_DIR}/backends/imgui_impl_wgpu.cpp PROPERTIES LANGUAGE OBJCXX)
+endif()
+if(EMSCRIPTEN)
+  target_compile_definitions(imgui PUBLIC IMGUI_IMPL_WEBGPU_BACKEND_DAWN)
+  target_compile_options(imgui PRIVATE ${_port} --use-port=contrib.glfw3)
+else()
+  target_compile_definitions(imgui PUBLIC IMGUI_IMPL_WEBGPU_BACKEND_DAWN)
+  target_link_libraries(imgui PUBLIC dawn::webgpu_dawn glfw)
+endif()
+target_link_libraries(fracbrot_deps INTERFACE imgui)
+
+# --- stb_image_write (screenshots) ------------------------------------------------
+FetchContent_Declare(stb
+  URL https://raw.githubusercontent.com/nothings/stb/2c980bb59875b0d32144a71867fbdebb2f77cd20/stb_image_write.h
+  DOWNLOAD_NO_EXTRACT TRUE)
+FetchContent_MakeAvailable(stb)
+target_include_directories(fracbrot_deps INTERFACE ${stb_SOURCE_DIR})
