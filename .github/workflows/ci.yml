@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macos (metal)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install ninja
+
+      - name: Cache fetched dependencies
+        uses: actions/cache@v4
+        with:
+          path: .cache/deps
+          key: deps-macos-${{ hashFiles('cmake/Dependencies.cmake') }}
+
+      - name: Configure
+        run: cmake --preset release
+
+      - name: Build
+        run: cmake --build --preset release
+
+      # Hosted runners expose a paravirtualized Metal device; each mode renders a few
+      # frames and the app exits non-zero on any WebGPU validation error.
+      - name: Smoke test
+        continue-on-error: true # windowing on hosted macOS runners is not guaranteed
+        run: |
+          for mode in 0 1 2 3; do
+            ./build/release/fracbrot --frames 5 --size 640x400 --mode $mode --screenshot smoke_$mode.png
+          done
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-macos
+          path: smoke_*.png
+          if-no-files-found: ignore

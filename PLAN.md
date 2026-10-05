@@ -33,7 +33,7 @@ Web-friendly rules:
 - [x] 4b `feat:` logistic map mode: bifurcation diagram standing on the Mandelbrot real axis in 3D (c = r(2-r)/4), 2D orbit tracer
 - [ ] 5 `feat:` web build (Emscripten preset, canvas surface, shell.html)
 - [ ] 6 `feat:` deep zoom via perturbation (high-precision CPU reference orbit)
-- [ ] 7 `chore:` CI matrix (macOS, Linux/Vulkan, web)
+- [x] 7 `chore:` CI (macOS; Linux/web later)
 - [ ] 8 optional: hand-written Metal/Vulkan backends behind gfx interface
 
 ## Conventions
