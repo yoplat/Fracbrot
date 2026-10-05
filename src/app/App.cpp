@@ -13,7 +13,7 @@ namespace fb {
 
 namespace {
 
-const char* const kModeNames[] = {"2D plane", "Heightfield", "3D fractal", "Logistic map"};
+const char* const kModeNames[] = {"2D plane", "3D fractal", "Logistic map"};
 const char* const kFormulaNames[] = {"Quaternion Mandelbrot", "Quaternion Julia", "Mandelbulb",
                                       "Bicomplex Mandelbrot (Tetrabrot)"};
 static_assert(std::size(kFormulaNames) == size_t(Formula3D::Count));
@@ -53,7 +53,6 @@ bool App::init(const AppOptions& opts) {
     m_mandel.init(m_ctx, m_palette);
     m_mandel.setBlocking(opts.maxFrames >= 0); // automated runs need finished reference orbits
     m_mandel.setForcePerturbation(opts.perturb);
-    m_terrain.init(m_ctx, m_palette);
     m_raymarcher.init(m_ctx, m_palette);
     m_bifurcation.init(m_ctx, m_palette);
     m_orbitTracer.init(m_ctx);
@@ -66,7 +65,7 @@ bool App::init(const AppOptions& opts) {
     if (opts.camera) m_camera = *opts.camera;
     m_mode = opts.mode;
     m_showOrbit = opts.traceC.has_value();
-    if (opts.orbit) {
+    if (opts.orbit && m_mode != ViewMode::Plane2D) {
         OrbitCamera& cam = activeOrbit();
         cam.yaw = opts.orbit->yaw;
         cam.pitch = opts.orbit->pitch;
@@ -79,19 +78,12 @@ bool App::init(const AppOptions& opts) {
 
 void App::resetCameras() {
     m_camera.reset();
-    m_orbit.reset();
     m_marchOrbit = marchHome();
     m_marchOrbit.target = m_march.boundCenter;
     m_logisticOrbit = logisticHome();
 }
 
-OrbitCamera& App::activeOrbit() {
-    switch (m_mode) {
-    case ViewMode::Fractal3D: return m_marchOrbit;
-    case ViewMode::LogisticMap: return m_logisticOrbit;
-    default: return m_orbit;
-    }
-}
+OrbitCamera& App::activeOrbit() { return m_mode == ViewMode::LogisticMap ? m_logisticOrbit : m_marchOrbit; }
 
 void App::animate(double time) {
     if (!m_animate) return;
@@ -131,20 +123,18 @@ void App::handleInput(float dt) {
 
     if (keysFree) {
         if (keyPressed(GLFW_KEY_1)) m_mode = ViewMode::Plane2D;
-        if (keyPressed(GLFW_KEY_2)) m_mode = ViewMode::Heightfield;
-        if (keyPressed(GLFW_KEY_3)) m_mode = ViewMode::Fractal3D;
-        if (keyPressed(GLFW_KEY_4)) m_mode = ViewMode::LogisticMap;
+        if (keyPressed(GLFW_KEY_2)) m_mode = ViewMode::Fractal3D;
+        if (keyPressed(GLFW_KEY_3)) m_mode = ViewMode::LogisticMap;
         if (keyPressed(GLFW_KEY_O)) m_showOrbit = !m_showOrbit;
         if (keyPressed(GLFW_KEY_TAB)) m_mode = ViewMode((int(m_mode) + 1) % int(ViewMode::Count));
         if (keyPressed(GLFW_KEY_P)) m_screenshotRequested = true;
         if (m_window.keyDown(GLFW_KEY_R)) resetCameras();
     }
 
-    switch (m_mode) {
-    case ViewMode::Plane2D: handleInput2D(dt, mx, my, scroll, mouseFree, keysFree); break;
-    case ViewMode::Heightfield: handleInput3D(dt, mx, my, scroll, mouseFree, keysFree); break;
-    default: handleInputOrbit(activeOrbit(), dt, mx, my, scroll, mouseFree, keysFree); break;
-    }
+    if (m_mode == ViewMode::Plane2D)
+        handleInput2D(dt, mx, my, scroll, mouseFree, keysFree);
+    else
+        handleInputOrbit(activeOrbit(), dt, mx, my, scroll, mouseFree, keysFree);
 
     m_lastCursor[0] = mx;
     m_lastCursor[1] = my;
@@ -172,51 +162,6 @@ void App::handleInput2D(float dt, double mx, double my, double scroll, bool mous
             m_camera.zoomAt(w / 2, h / 2, w, h, std::pow(0.25, dt));
         if (m_window.keyDown(GLFW_KEY_Q) || m_window.keyDown(GLFW_KEY_MINUS))
             m_camera.zoomAt(w / 2, h / 2, w, h, std::pow(4.0, dt));
-    }
-}
-
-void App::handleInput3D(float dt, double mx, double my, double scroll, bool mouseFree, bool keysFree) {
-    const double h = m_ctx.height;
-
-    // Moves the sampled region by a world-space delta on the ground plane.
-    auto moveRegion = [this](glm::vec3 d) {
-        m_camera.cx += d.x * m_camera.scale;
-        m_camera.cy -= d.z * m_camera.scale;
-    };
-
-    const bool left = m_window.mouseDown(GLFW_MOUSE_BUTTON_LEFT);
-    const bool right = m_window.mouseDown(GLFW_MOUSE_BUTTON_RIGHT);
-    const bool shift = m_window.keyDown(GLFW_KEY_LEFT_SHIFT) || m_window.keyDown(GLFW_KEY_RIGHT_SHIFT);
-    if (mouseFree) {
-        if (scroll != 0.0) m_orbit.dolly(float(std::pow(0.9, scroll)));
-        const float dx = float(mx - m_lastCursor[0]);
-        const float dy = float(my - m_lastCursor[1]);
-        if (m_dragging && (right || (left && shift))) {
-            // Drag the terrain under the cursor.
-            const float k = 2.0f * m_orbit.distance * std::tan(0.5f * m_orbit.fovY) / float(h);
-            moveRegion(-(m_orbit.groundRight() * dx - m_orbit.groundForward() * dy) * k);
-        } else if (m_dragging && left) {
-            m_orbit.rotate(-dx * 0.005f, dy * 0.005f);
-        }
-        m_dragging = left || right;
-    } else {
-        m_dragging = false;
-    }
-
-    if (keysFree) {
-        const float step = 0.8f * dt;
-        glm::vec3 move{0.0f};
-        if (m_window.keyDown(GLFW_KEY_W) || m_window.keyDown(GLFW_KEY_UP)) move += m_orbit.groundForward();
-        if (m_window.keyDown(GLFW_KEY_S) || m_window.keyDown(GLFW_KEY_DOWN)) move -= m_orbit.groundForward();
-        if (m_window.keyDown(GLFW_KEY_D) || m_window.keyDown(GLFW_KEY_RIGHT)) move += m_orbit.groundRight();
-        if (m_window.keyDown(GLFW_KEY_A) || m_window.keyDown(GLFW_KEY_LEFT)) move -= m_orbit.groundRight();
-        moveRegion(move * step);
-
-        const double w = m_ctx.width;
-        if (m_window.keyDown(GLFW_KEY_E) || m_window.keyDown(GLFW_KEY_EQUAL))
-            m_camera.zoomAt(w / 2, h / 2, w, h, std::pow(0.4, dt));
-        if (m_window.keyDown(GLFW_KEY_Q) || m_window.keyDown(GLFW_KEY_MINUS))
-            m_camera.zoomAt(w / 2, h / 2, w, h, std::pow(2.5, dt));
     }
 }
 
@@ -255,14 +200,13 @@ void App::drawUi() {
     if (ImGui::Combo("mode (Tab)", &mode, kModeNames, int(ViewMode::Count))) m_mode = ViewMode(mode);
     ImGui::Separator();
 
-    int iter = int(m_params.maxIter);
-    if (ImGui::SliderInt("iterations", &iter, 16, 20000, "%d", ImGuiSliderFlags_Logarithmic))
-        m_params.maxIter = uint32_t(std::max(iter, 1));
-
-    ImGui::Text("center  %s", m_camera.cx.toString(18).c_str());
-    ImGui::Text("        %s", m_camera.cy.toString(18).c_str());
-    ImGui::Text("zoom    %.3e", 1.2 / m_camera.scale);
     if (m_mode == ViewMode::Plane2D) {
+        int iter = int(m_params.maxIter);
+        if (ImGui::SliderInt("iterations", &iter, 16, 20000, "%d", ImGuiSliderFlags_Logarithmic))
+            m_params.maxIter = uint32_t(std::max(iter, 1));
+        ImGui::Text("center  %s", m_camera.cx.toString(18).c_str());
+        ImGui::Text("        %s", m_camera.cy.toString(18).c_str());
+        ImGui::Text("zoom    %.3e", 1.2 / m_camera.scale);
         const PerturbStatus& ps = m_mandel.status();
         if (ps.active) {
             ImGui::Text("deep zoom: ref %u iters%s, %d bits%s", ps.refLen, ps.refEscaped ? " (escaped)" : "",
@@ -272,23 +216,8 @@ void App::drawUi() {
         if (ImGui::Checkbox("force perturbation", &force)) m_mandel.setForcePerturbation(force);
         ImGui::SameLine();
         if (ImGui::Button("copy location")) ImGui::SetClipboardText(m_camera.toString().c_str());
-    } else if (m_camera.scale < 1e-5) {
-        ImGui::TextColored({1, 0.6f, 0.2f, 1}, "float precision limit (deep zoom is 2D only)");
     }
-    if (ImGui::Button("reset (R)")) resetCameras();
-
-    if (m_mode == ViewMode::Heightfield) {
-        ImGui::SeparatorText("terrain");
-        ImGui::SliderFloat("height", &m_scene.heightScale, 0.0f, 1.5f);
-        ImGui::SliderFloat("height curve", &m_scene.heightCurve, 0.25f, 4.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
-        ImGui::SliderFloat("interior height", &m_scene.interiorHeight, 0.0f, 1.0f);
-        static const uint32_t kGrids[] = {256, 512, 1024, 2048};
-        static const char* const kGridNames[] = {"256", "512", "1024", "2048"};
-        int grid = int(std::find(std::begin(kGrids), std::end(kGrids), m_scene.gridSize) - std::begin(kGrids));
-        if (ImGui::Combo("grid", &grid, kGridNames, int(std::size(kGrids)))) m_scene.gridSize = kGrids[grid];
-        ImGui::SliderAngle("light azimuth", &m_lightAzimuth, -180.0f, 180.0f);
-        ImGui::SliderAngle("light elevation", &m_lightElevation, 5.0f, 90.0f);
-    }
+    if (ImGui::Button("reset view (R)")) resetCameras();
 
     if (m_mode == ViewMode::Fractal3D) {
         ImGui::SeparatorText("3D fractal");
@@ -298,7 +227,8 @@ void App::drawUi() {
             m_marchOrbit.target = m_march.boundCenter;
         }
         int iters = int(m_march.iterations);
-        if (ImGui::SliderInt("3D iterations", &iters, 2, 512, "%d", ImGuiSliderFlags_Logarithmic)) m_march.iterations = uint32_t(iters);
+        if (ImGui::SliderInt("iterations", &iters, 2, 512, "%d", ImGuiSliderFlags_Logarithmic))
+            m_march.iterations = uint32_t(iters);
         if (m_march.formula == Formula3D::Mandelbulb) {
             ImGui::SliderFloat("power", &m_march.power, 1.0f, 16.0f);
         } else {
@@ -337,6 +267,9 @@ void App::drawUi() {
     if (m_mode == ViewMode::LogisticMap) {
         ImGui::SeparatorText("logistic map");
         ImGui::TextDisabled("x' = r x (1 - x)  <->  z' = z^2 + c\nc = r(2 - r)/4, z = r(1/2 - x)");
+        int iter = int(m_params.maxIter);
+        if (ImGui::SliderInt("plane iterations", &iter, 16, 5000, "%d", ImGuiSliderFlags_Logarithmic))
+            m_params.maxIter = uint32_t(std::max(iter, 1));
         ImGui::Checkbox("highlight r", &m_highlightR);
         if (m_highlightR) {
             ImGui::SliderFloat("r", &m_logisticR, 1.0f, 4.0f, "%.4f");
@@ -380,11 +313,9 @@ void App::drawUi() {
     ImGui::Separator();
     if (m_mode == ViewMode::Plane2D)
         ImGui::TextDisabled("drag: pan  scroll: zoom\nWASD/arrows: pan  Q/E: zoom");
-    else if (m_mode == ViewMode::Heightfield)
-        ImGui::TextDisabled("drag: orbit  scroll: distance\nright/shift-drag, WASD: move region\nQ/E: zoom region");
     else
         ImGui::TextDisabled("drag: orbit  scroll: distance\nWASD: move target  Q/E: down/up");
-    ImGui::TextDisabled("1-4 / Tab: mode  P: screenshot");
+    ImGui::TextDisabled("1-3 / Tab: mode  P: screenshot");
     ImGui::End();
 }
 
@@ -491,18 +422,10 @@ bool App::frame() {
         wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&sceneDesc);
         m_bifurcation.draw(pass);
         pass.End();
-    } else if (m_mode == ViewMode::Fractal3D) {
+    } else {
         updateScene(m_marchOrbit);
         m_raymarcher.update(m_ctx, m_params, m_scene, m_march, m_marchOrbit.fovY, m_renderScale);
         m_raymarcher.render(encoder, target.view);
-    } else {
-        updateScene(m_orbit);
-        m_terrain.update(m_ctx, m_params, m_scene);
-        m_terrain.compute(encoder);
-        sceneDesc.depthStencilAttachment = &depth;
-        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&sceneDesc);
-        m_terrain.draw(pass);
-        pass.End();
     }
 
     // UI pass on top.
@@ -534,7 +457,6 @@ void App::shutdown() {
     m_orbitTracer = {};
     m_bifurcation = {};
     m_raymarcher = {};
-    m_terrain = {};
     m_mandel = {};
     m_ctx = {};
     m_window.destroy();

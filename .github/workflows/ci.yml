@@ -36,7 +36,7 @@ jobs:
       - name: Smoke test
         continue-on-error: true # windowing on hosted macOS runners is not guaranteed
         run: |
-          for mode in 0 1 2 3; do
+          for mode in 0 1 2; do
             ./build/release/fracbrot --frames 5 --size 640x400 --mode $mode --screenshot smoke_$mode.png
           done
 

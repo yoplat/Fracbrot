@@ -8,7 +8,6 @@
 #include "fractal/OrbitTracer.h"
 #include "fractal/Palette.h"
 #include "fractal/Raymarcher.h"
-#include "fractal/Terrain.h"
 #include "gfx/Context.h"
 #include "platform/Window.h"
 
@@ -19,7 +18,7 @@
 
 namespace fb {
 
-enum class ViewMode : int { Plane2D = 0, Heightfield = 1, Fractal3D = 2, LogisticMap = 3, Count };
+enum class ViewMode : int { Plane2D = 0, Fractal3D = 1, LogisticMap = 2, Count };
 
 struct AppOptions {
     int width = 1280;
@@ -50,7 +49,6 @@ public:
 private:
     void handleInput(float dt);
     void handleInput2D(float dt, double mx, double my, double scroll, bool mouseFree, bool keysFree);
-    void handleInput3D(float dt, double mx, double my, double scroll, bool mouseFree, bool keysFree);
     void handleInputOrbit(OrbitCamera& cam, float dt, double mx, double my, double scroll, bool mouseFree,
                           bool keysFree);
     void resetCameras();
@@ -67,14 +65,12 @@ private:
     Gui m_gui;
     PaletteTexture m_palette;
     Mandel2D m_mandel;
-    Terrain m_terrain;
     Raymarcher m_raymarcher;
     Bifurcation m_bifurcation;
     OrbitTracer m_orbitTracer;
 
     ViewMode m_mode = ViewMode::Plane2D;
-    Camera2D m_camera;   // region of the complex plane (also the terrain extent)
-    OrbitCamera m_orbit; // heightfield viewpoint
+    Camera2D m_camera;        // 2D view of the complex plane
     OrbitCamera m_marchOrbit; // 3D fractal viewpoint
     MarchParams m_march;
     float m_renderScale = 0.75f;

@@ -30,10 +30,7 @@ struct SceneParams {
     glm::mat4 invViewProj{1.0f};
     glm::vec4 camPos{0.0f};
     glm::vec4 lightDir{0.4f, 0.8f, 0.3f, 0.0f}; // towards the light
-    float heightScale = 0.35f;
-    uint32_t gridSize = 512;
-    float interiorHeight = 0.0f; // height of the set itself, in [0, 1]
-    float heightCurve = 1.0f;    // exponent applied to the normalized height
+    uint32_t _pad[4] = {};
 };
 static_assert(sizeof(SceneParams) == 176);
 

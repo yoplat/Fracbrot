@@ -6,10 +6,7 @@ struct Scene {
     invViewProj: mat4x4f,
     camPos: vec4f,
     lightDir: vec4f,
-    heightScale: f32,
-    gridSize: u32,
-    interiorHeight: f32,
-    heightCurve: f32,
+    _pad: vec4u,
 };
 
 struct Bif {
