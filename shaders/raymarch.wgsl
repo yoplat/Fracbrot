@@ -207,10 +207,10 @@ fn calcNormal(pos: vec3f, eps: f32) -> vec3f {
 fn softShadow(ro: vec3f, rd: vec3f) -> f32 {
     var res = 1.0;
     var t = 0.01;
-    for (var i = 0; i < 64; i++) {
+    for (var i = 0; i < 32; i++) {
         let h = deN(ro + rd * t, coarseIterations()).x;
         res = min(res, m.shadowSoftness * h / t);
-        t += clamp(h, 0.005, 0.1);
+        t += clamp(h, 0.01, 0.2);
         if (res < 0.001 || t > 3.0) { break; }
     }
     return clamp(res, 0.0, 1.0);
