@@ -61,4 +61,5 @@ python3 bench/compare.py bench/baseline.json bench/new.json
 ```
 
 Each frame is timed from swapchain acquire (vsync excluded) until the GPU finishes, at the
-default 1280x800 window (2560x1600 on Retina). `bench/baseline.json` is the pre-optimization run.
+default 1280x800 window (2560x1600 on Retina). `bench/baseline.json` is the pre-optimization run. For low-noise comparisons use
+`bench/run.sh NAME 3` (best median of 3 runs) and `bench/compare.py bench/out/A bench/out/B`.
