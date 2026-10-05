@@ -5,3 +5,4 @@ fracbrot_*.png
 compile_commands.json
 .clangd/
 .claude/worktrees/
+.claude/scheduled_tasks.lock
