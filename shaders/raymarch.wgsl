@@ -3,6 +3,8 @@
 //   0: quaternion Mandelbrot  q <- q² + c,  c = (x, y, z, sliceW), z0 = 0
 //   1: quaternion Julia       q <- q² + k,  q0 = (x, y, z, sliceW)
 //   2: Mandelbulb (power N), formula axis z mapped to world +y
+//   3: bicomplex Mandelbrot ("Tetrabrot"): q <- q² + c with commuting units; it splits
+//      into two complex Mandelbrot iterations, so the set is M x M seen through a slice
 // For the quaternion formulas world x is the real axis.
 
 struct Scene {
@@ -37,6 +39,7 @@ struct March {
 const FORMULA_QUAT_MANDEL: u32 = 0u;
 const FORMULA_QUAT_JULIA: u32 = 1u;
 const FORMULA_BULB: u32 = 2u;
+const FORMULA_BICOMPLEX: u32 = 3u;
 const FLAG_SHADOWS: u32 = 1u;
 const FLAG_AO: u32 = 2u;
 const FLAG_REFLECT: u32 = 4u;
@@ -111,9 +114,42 @@ fn deBulb(worldPos: vec3f) -> vec2f {
     return vec2f(0.5 * log(max(r, 1e-8)) * r / dr, trap);
 }
 
+fn cmul(a: vec2f, b: vec2f) -> vec2f {
+    return vec2f(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
+}
+
+// 2D Mandelbrot distance estimate for c: (distance, orbit trap); distance 0 inside.
+fn deMandel2(c: vec2f) -> vec2f {
+    var z = vec2f(0.0);
+    var dz = vec2f(0.0);
+    var r2 = 0.0;
+    var trap = 1e10;
+    for (var i = 0u; i < m.iterations; i++) {
+        dz = 2.0 * cmul(z, dz) + vec2f(1.0, 0.0);
+        z = cmul(z, z) + c;
+        r2 = dot(z, z);
+        trap = min(trap, r2);
+        if (r2 > 1e4) { break; }
+    }
+    if (r2 <= 1e4) { return vec2f(0.0, trap); }
+    let r = sqrt(r2);
+    return vec2f(0.5 * r * log(r) / length(dz), trap);
+}
+
+// Bicomplex q = (a, b, c, d) in idempotent form: z1 = (a - d) + i(b + c), z2 = (a + d) + i(b - c).
+// q is in the set iff both z1 and z2 are in M. Each projection stretches distances by at most
+// sqrt(2), so max(d1, d2) / sqrt(2) bounds the distance to the intersection.
+fn deBicomplex(pos: vec3f) -> vec2f {
+    let q = toSlice(pos);
+    let d1 = deMandel2(vec2f(q.x - q.w, q.y + q.z));
+    let d2 = deMandel2(vec2f(q.x + q.w, q.y - q.z));
+    return vec2f(max(d1.x, d2.x) * 0.70710678, min(d1.y, d2.y));
+}
+
 // (distance estimate, orbit trap)
 fn de(pos: vec3f) -> vec2f {
     switch (m.formula) {
+        case FORMULA_BICOMPLEX: { return deBicomplex(pos); }
         case FORMULA_QUAT_JULIA: { return deQuat(pos, true); }
         case FORMULA_BULB: { return deBulb(pos); }
         default: { return deQuat(pos, false); }

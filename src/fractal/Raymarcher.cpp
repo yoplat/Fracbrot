@@ -56,6 +56,12 @@ void applyFormulaDefaults(MarchParams& params, Formula3D formula) {
         params.boundCenter = {0.0f, 0.0f, 0.0f};
         params.boundRadius = 1.3f;
         break;
+    case Formula3D::Bicomplex:
+        params.iterations = 64;
+        params.trapMix = 0.8f;
+        params.boundCenter = {-0.75f, 0.0f, 0.0f};
+        params.boundRadius = 2.2f;
+        break;
     case Formula3D::Count:
         break;
     }

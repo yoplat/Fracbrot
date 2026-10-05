@@ -10,7 +10,7 @@ namespace fb {
 class Context;
 class PaletteTexture;
 
-enum class Formula3D : uint32_t { QuatMandelbrot = 0, QuatJulia = 1, Mandelbulb = 2, Count };
+enum class Formula3D : uint32_t { QuatMandelbrot = 0, QuatJulia = 1, Mandelbulb = 2, Bicomplex = 3, Count };
 
 enum MarchFlags : uint32_t {
     kMarchShadows = 1u << 0,

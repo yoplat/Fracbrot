@@ -14,7 +14,8 @@ namespace fb {
 namespace {
 
 const char* const kModeNames[] = {"2D plane", "Heightfield", "3D fractal", "Logistic map"};
-const char* const kFormulaNames[] = {"Quaternion Mandelbrot", "Quaternion Julia", "Mandelbulb"};
+const char* const kFormulaNames[] = {"Quaternion Mandelbrot", "Quaternion Julia", "Mandelbulb",
+                                      "Bicomplex Mandelbrot (Tetrabrot)"};
 static_assert(std::size(kFormulaNames) == size_t(Formula3D::Count));
 
 OrbitCamera marchHome() {
@@ -58,6 +59,9 @@ bool App::init(const AppOptions& opts) {
     m_orbitTracer.init(m_ctx);
 
     applyFormulaDefaults(m_march, Formula3D(std::clamp(opts.formula, 0, int(Formula3D::Count) - 1)));
+    if (opts.iter3d) m_march.iterations = opts.iter3d;
+    if (opts.detail > 0.0f) m_march.detail = opts.detail;
+    if (opts.power > 0.0f) m_march.power = opts.power;
     resetCameras();
     if (opts.camera) m_camera = *opts.camera;
     m_mode = opts.mode;
@@ -102,6 +106,9 @@ void App::animate(double time) {
         break;
     case Formula3D::Mandelbulb:
         m_march.power = 8.0f + 4.0f * std::sin(t * 0.2f);
+        break;
+    case Formula3D::Bicomplex:
+        m_march.sliceW = 0.3f * std::sin(t * 0.25f);
         break;
     case Formula3D::Count:
         break;
@@ -291,7 +298,7 @@ void App::drawUi() {
             m_marchOrbit.target = m_march.boundCenter;
         }
         int iters = int(m_march.iterations);
-        if (ImGui::SliderInt("3D iterations", &iters, 2, 64)) m_march.iterations = uint32_t(iters);
+        if (ImGui::SliderInt("3D iterations", &iters, 2, 512, "%d", ImGuiSliderFlags_Logarithmic)) m_march.iterations = uint32_t(iters);
         if (m_march.formula == Formula3D::Mandelbulb) {
             ImGui::SliderFloat("power", &m_march.power, 1.0f, 16.0f);
         } else {

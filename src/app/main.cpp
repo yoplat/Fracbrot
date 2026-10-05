@@ -23,7 +23,10 @@ void usage() {
         "  --palette N         palette preset index\n"
         "  --mode N            0 = 2D plane, 1 = heightfield, 2 = 3D fractal, 3 = logistic map\n"
         "  --orbit YAW,PITCH,DIST  3D camera (radians)\n"
-        "  --formula N         3D formula: 0 = quaternion Mandelbrot, 1 = quaternion Julia, 2 = Mandelbulb\n"
+        "  --formula N         3D formula: 0 = quaternion Mandelbrot, 1 = quaternion Julia, 2 = Mandelbulb, 3 = bicomplex\n"
+        "  --iter3d N          3D fractal iterations\n"
+        "  --detail F          3D hit threshold in pixels (smaller = finer)\n"
+        "  --power F           Mandelbulb exponent\n"
         "  --trace X,Y         show the orbit of c = X + iY in 2D mode\n"
         "  --no-ui             hide the UI panel\n");
 }
@@ -54,6 +57,12 @@ int main(int argc, char** argv) {
             if (std::sscanf(argv[++i], "%f,%f,%f", &orbit.yaw, &orbit.pitch, &orbit.distance) == 3) opts.orbit = orbit;
         } else if (!std::strcmp(a, "--formula") && hasNext) {
             opts.formula = std::atoi(argv[++i]);
+        } else if (!std::strcmp(a, "--iter3d") && hasNext) {
+            opts.iter3d = uint32_t(std::atoi(argv[++i]));
+        } else if (!std::strcmp(a, "--detail") && hasNext) {
+            opts.detail = float(std::atof(argv[++i]));
+        } else if (!std::strcmp(a, "--power") && hasNext) {
+            opts.power = float(std::atof(argv[++i]));
         } else if (!std::strcmp(a, "--trace") && hasNext) {
             double x, y;
             if (std::sscanf(argv[++i], "%lf,%lf", &x, &y) == 2) opts.traceC = std::make_pair(x, y);
