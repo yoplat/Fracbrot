@@ -26,3 +26,23 @@ ln -sf build/release/compile_commands.json compile_commands.json
 ```
 
 Generated shader headers live in `build/<preset>/generated`, so configure/build once before opening the editor.
+
+## Deep zoom
+
+Below scale 1e-3 the 2D view switches to perturbation rendering: the view center is an
+arbitrary-precision fixed-point number (`src/math/BigFixed`), a reference orbit is iterated on the
+CPU at that precision, and each pixel iterates its f32 difference from it on the GPU (with
+rebasing, and rescaled deltas below 2^-64). Zoom is limited only by the double `scale`, ~1e290.
+
+```sh
+# c = i at zoom ~1e100, any number of digits works for X,Y
+./build/debug/fracbrot --view 0,1,1e-100 --iter 5000
+```
+
+"copy location" in the UI copies the current view in the same `X,Y,SCALE` format.
+
+## Tests
+
+```sh
+ctest --test-dir build/debug --output-on-failure
+```

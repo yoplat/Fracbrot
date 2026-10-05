@@ -78,14 +78,16 @@ int OrbitTracer::trace(const Context& ctx, const Camera2D& camera, double cx, do
     path.reserve(size_t(kMaxPoints) * 2);
     const uint32_t limit = std::min(maxIter, kMaxPoints - 1);
 
+    // Offsets from the view center keep vertices precise when zoomed in.
+    const double ox = camera.cx.toDouble(), oy = camera.cy.toDouble();
     double zx = 0.0, zy = 0.0;
     int escapedAt = -1;
-    path.insert(path.end(), {float(zx - camera.cx), float(zy - camera.cy)});
+    path.insert(path.end(), {float(zx - ox), float(zy - oy)});
     for (uint32_t i = 0; i < limit; ++i) {
         const double nx = zx * zx - zy * zy + cx;
         zy = 2.0 * zx * zy + cy;
         zx = nx;
-        path.insert(path.end(), {float(zx - camera.cx), float(zy - camera.cy)});
+        path.insert(path.end(), {float(zx - ox), float(zy - oy)});
         if (zx * zx + zy * zy > 4.0) {
             escapedAt = int(i + 1);
             break;

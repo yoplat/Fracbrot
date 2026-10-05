@@ -30,6 +30,7 @@ struct AppOptions {
     std::optional<Camera2D> camera;
     std::optional<OrbitCamera> orbit; // applies to the starting 3D mode
     uint32_t maxIter = 256;
+    bool perturb = false; // force perturbation rendering in 2D
     int palette = 0;
     ViewMode mode = ViewMode::Plane2D;
     int formula = 0; // Formula3D

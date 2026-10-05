@@ -17,7 +17,8 @@ void usage() {
         "  --frames N          quit after N frames\n"
         "  --screenshot FILE   save the last frame as PNG (use with --frames)\n"
         "  --size WxH          window size\n"
-        "  --view X,Y,SCALE    initial center and half-height\n"
+        "  --view X,Y,SCALE    initial center (any number of digits) and half-height\n"
+        "  --perturb           force perturbation rendering in 2D (default: below scale 1e-3)\n"
         "  --iter N            max iterations\n"
         "  --palette N         palette preset index\n"
         "  --mode N            0 = 2D plane, 1 = heightfield, 2 = 3D fractal, 3 = logistic map\n"
@@ -41,8 +42,7 @@ int main(int argc, char** argv) {
         } else if (!std::strcmp(a, "--size") && hasNext) {
             std::sscanf(argv[++i], "%dx%d", &opts.width, &opts.height);
         } else if (!std::strcmp(a, "--view") && hasNext) {
-            fb::Camera2D cam;
-            if (std::sscanf(argv[++i], "%lf,%lf,%lf", &cam.cx, &cam.cy, &cam.scale) == 3) opts.camera = cam;
+            opts.camera = fb::Camera2D::parse(argv[++i]);
         } else if (!std::strcmp(a, "--iter") && hasNext) {
             opts.maxIter = uint32_t(std::atoi(argv[++i]));
         } else if (!std::strcmp(a, "--palette") && hasNext) {
@@ -57,6 +57,8 @@ int main(int argc, char** argv) {
         } else if (!std::strcmp(a, "--trace") && hasNext) {
             double x, y;
             if (std::sscanf(argv[++i], "%lf,%lf", &x, &y) == 2) opts.traceC = std::make_pair(x, y);
+        } else if (!std::strcmp(a, "--perturb")) {
+            opts.perturb = true;
         } else if (!std::strcmp(a, "--no-ui")) {
             opts.hideUi = true;
         } else {
