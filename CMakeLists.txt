@@ -20,6 +20,7 @@ add_executable(fracbrot
   src/gfx/Context.cpp
   src/gfx/Readback.cpp
   src/fractal/Bifurcation.cpp
+  src/fractal/DistanceEstimator.cpp
   src/fractal/Mandel2D.cpp
   src/fractal/OrbitTracer.cpp
   src/fractal/ReferenceOrbit.cpp
@@ -55,4 +56,11 @@ if(NOT EMSCRIPTEN)
   add_executable(fracbrot_tests tests/test_bigfixed.cpp src/math/BigFixed.cpp src/fractal/ReferenceOrbit.cpp)
   target_include_directories(fracbrot_tests PRIVATE src)
   add_test(NAME fracbrot_tests COMMAND fracbrot_tests)
+
+  add_executable(fracbrot_distance_tests tests/test_distance.cpp src/fractal/DistanceEstimator.cpp
+                                         src/fractal/Raymarcher.cpp)
+  target_include_directories(fracbrot_distance_tests PRIVATE src)
+  target_link_libraries(fracbrot_distance_tests PRIVATE fracbrot_deps)
+  fracbrot_embed_shaders(fracbrot_distance_tests ${CMAKE_SOURCE_DIR}/shaders)
+  add_test(NAME fracbrot_distance_tests COMMAND fracbrot_distance_tests)
 endif()

@@ -1,5 +1,6 @@
 #include "app/App.h"
 
+#include "fractal/DistanceEstimator.h"
 #include "gfx/Readback.h"
 
 #include <GLFW/glfw3.h>
@@ -176,9 +177,20 @@ void App::handleInput2D(float dt, double mx, double my, double scroll, bool mous
 
 void App::handleInputOrbit(OrbitCamera& cam, float dt, double mx, double my, double scroll, bool mouseFree,
                            bool keysFree) {
+    // Re-pivot between drags; keeping the pivot fixed during a drag keeps rotation stable.
+    const bool fractal = m_mode == ViewMode::Fractal3D;
+    const float pixelAngle = 2.0f * std::tan(0.5f * cam.fovY) / float(std::max(m_ctx.height, 1u));
+    if (fractal && !m_dragging) pivotOnSurface(cam, m_march, pixelAngle);
+    auto zoom = [&](float factor) {
+        if (fractal)
+            zoomTowardSurface(cam, m_march, pixelAngle, factor);
+        else
+            cam.dolly(factor);
+    };
+
     const bool left = m_window.mouseDown(GLFW_MOUSE_BUTTON_LEFT);
     if (mouseFree) {
-        if (scroll != 0.0) cam.dolly(float(std::pow(0.9, scroll)));
+        if (scroll != 0.0) zoom(float(std::pow(0.9, scroll)));
         if (m_dragging && left)
             cam.rotate(-float(mx - m_lastCursor[0]) * 0.005f, float(my - m_lastCursor[1]) * 0.005f);
         m_dragging = left;
@@ -198,8 +210,8 @@ void App::handleInputOrbit(OrbitCamera& cam, float dt, double mx, double my, dou
         if (m_window.keyDown(GLFW_KEY_Q)) move.y -= 1.0f;
         cam.target += move * step;
 
-        if (m_window.keyDown(GLFW_KEY_Z)) cam.dolly(float(std::pow(0.3, dt)));
-        if (m_window.keyDown(GLFW_KEY_X)) cam.dolly(float(std::pow(1.0 / 0.3, dt)));
+        if (m_window.keyDown(GLFW_KEY_Z)) zoom(float(std::pow(0.3, dt)));
+        if (m_window.keyDown(GLFW_KEY_X)) zoom(float(std::pow(1.0 / 0.3, dt)));
     }
 }
 

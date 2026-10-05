@@ -23,7 +23,7 @@ struct OrbitCamera {
         pitch = std::clamp(pitch + dPitch, -1.5f, 1.5f);
     }
 
-    void dolly(float factor) { distance = std::clamp(distance * factor, 0.05f, 50.0f); }
+    void dolly(float factor) { distance = std::clamp(distance * factor, 1e-5f, 50.0f); }
 
     glm::vec3 position() const {
         const float cp = std::cos(pitch);
