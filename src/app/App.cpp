@@ -14,6 +14,9 @@ namespace fb {
 
 namespace {
 
+// How long the 3D view must be unchanged before rendering at full quality again.
+constexpr double kSettleSeconds = 0.15;
+
 const char* const kModeNames[] = {"2D plane", "3D fractal", "Logistic map"};
 const char* const kFormulaNames[] = {"Quaternion Mandelbrot", "Quaternion Julia", "Mandelbulb",
                                       "Bicomplex Mandelbrot (Tetrabrot)"};
@@ -301,6 +304,7 @@ void App::drawUi() {
         int steps = int(m_march.maxSteps);
         if (ImGui::SliderInt("max steps", &steps, 32, 1000)) m_march.maxSteps = uint32_t(steps);
         ImGui::SliderFloat("render scale", &m_renderScale, 0.25f, 2.0f);
+        ImGui::Checkbox("fast controls (half res while moving)", &m_fastControls);
         ImGui::SliderFloat("trap color", &m_march.trapMix, 0.0f, 1.0f);
         ImGui::CheckboxFlags("shadows", &m_march.flags, kMarchShadows);
         ImGui::SameLine();
@@ -485,7 +489,13 @@ bool App::frame() {
         pass.End();
     } else {
         updateScene(m_marchOrbit);
-        m_raymarcher.update(m_ctx, m_params, m_scene, m_march, m_marchOrbit.fovY, m_renderScale);
+        // Fast controls: render at half resolution while the view is changing, then once at
+        // full quality when it settles. Unchanged frames reuse the last image.
+        if (m_raymarcher.changed(m_params, m_scene, m_march)) m_lastMarchChange = now;
+        const bool moving = m_fastControls && !m_bench && now - m_lastMarchChange < kSettleSeconds;
+        const float scale = moving ? 0.5f * m_renderScale : m_renderScale;
+        if (m_bench) m_raymarcher.invalidate();
+        m_raymarcher.update(m_ctx, m_params, m_scene, m_march, m_marchOrbit.fovY, scale);
         m_raymarcher.render(encoder, target.view);
     }
 

@@ -75,6 +75,7 @@ void PaletteTexture::init(const wgpu::Device& device) {
 }
 
 void PaletteTexture::upload(const wgpu::Queue& queue, const PalettePreset& preset) {
+    ++version;
     const std::vector<uint8_t> texels = bakePalette(preset, kWidth);
     wgpu::TexelCopyTextureInfo dst;
     dst.texture = m_texture;

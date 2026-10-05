@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace fb {
 
@@ -74,6 +75,7 @@ void applyFormulaDefaults(MarchParams& params, Formula3D formula) {
 }
 
 void Raymarcher::init(const Context& ctx, const PaletteTexture& palette) {
+    m_palette = &palette;
     m_params = createUniformBuffer(ctx.device, sizeof(FractalParams), "march params");
     m_scene = createUniformBuffer(ctx.device, sizeof(SceneParams), "march scene");
     m_march = createUniformBuffer(ctx.device, sizeof(MarchParams), "march");
@@ -128,11 +130,28 @@ void Raymarcher::resizeTarget(const Context& ctx, uint32_t width, uint32_t heigh
     m_blitBindGroup = ctx.device.CreateBindGroup(&bgDesc);
 }
 
+bool Raymarcher::changed(FractalParams params, const SceneParams& scene, const MarchParams& march) const {
+    params.time = 0.0f; // not used by the ray-marcher; changes every frame
+    params.resolution[0] = m_lastParams.resolution[0];
+    params.resolution[1] = m_lastParams.resolution[1];
+    MarchParams m = march;
+    m.pixelAngle = m_lastMarch.pixelAngle; // derived from resolution
+    return std::memcmp(&params, &m_lastParams, sizeof(params)) != 0 ||
+           std::memcmp(&scene, &m_lastScene, sizeof(scene)) != 0 ||
+           std::memcmp(&m, &m_lastMarch, sizeof(m)) != 0 || m_palette->version != m_lastPaletteVersion;
+}
+
 void Raymarcher::update(const Context& ctx, FractalParams params, const SceneParams& scene, MarchParams march,
                         float fovY, float renderScale) {
     const uint32_t w = std::max(1u, uint32_t(float(ctx.width) * renderScale));
     const uint32_t h = std::max(1u, uint32_t(float(ctx.height) * renderScale));
-    if (w != m_width || h != m_height) resizeTarget(ctx, w, h);
+    if (w != m_width || h != m_height) {
+        resizeTarget(ctx, w, h);
+        m_dirty = true;
+    }
+    if (changed(params, scene, march)) m_dirty = true;
+    if (!m_dirty) return;
+    params.time = 0.0f;
 
     params.resolution[0] = float(w);
     params.resolution[1] = float(h);
@@ -141,9 +160,13 @@ void Raymarcher::update(const Context& ctx, FractalParams params, const ScenePar
     ctx.queue.WriteBuffer(m_params, 0, &params, sizeof(params));
     ctx.queue.WriteBuffer(m_scene, 0, &scene, sizeof(scene));
     ctx.queue.WriteBuffer(m_march, 0, &march, sizeof(march));
+    m_lastParams = params;
+    m_lastScene = scene;
+    m_lastMarch = march;
+    m_lastPaletteVersion = m_palette->version;
 }
 
-void Raymarcher::render(const wgpu::CommandEncoder& encoder, const wgpu::TextureView& target) const {
+void Raymarcher::render(const wgpu::CommandEncoder& encoder, const wgpu::TextureView& target) {
     wgpu::RenderPassColorAttachment color;
     color.view = m_offscreen;
     color.loadOp = wgpu::LoadOp::Clear;
@@ -153,11 +176,14 @@ void Raymarcher::render(const wgpu::CommandEncoder& encoder, const wgpu::Texture
     desc.colorAttachmentCount = 1;
     desc.colorAttachments = &color;
 
-    wgpu::RenderPassEncoder march = encoder.BeginRenderPass(&desc);
-    march.SetPipeline(m_marchPipeline);
-    march.SetBindGroup(0, m_marchBindGroup);
-    march.Draw(3);
-    march.End();
+    if (m_dirty) {
+        wgpu::RenderPassEncoder march = encoder.BeginRenderPass(&desc);
+        march.SetPipeline(m_marchPipeline);
+        march.SetBindGroup(0, m_marchBindGroup);
+        march.Draw(3);
+        march.End();
+        m_dirty = false;
+    }
 
     color.view = target;
     wgpu::RenderPassEncoder blit = encoder.BeginRenderPass(&desc);

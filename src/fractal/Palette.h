@@ -33,6 +33,7 @@ public:
 
     wgpu::TextureView view;
     wgpu::Sampler sampler;
+    uint32_t version = 0; // bumped on every upload, so cached renders know to refresh
 
 private:
     wgpu::Texture m_texture;

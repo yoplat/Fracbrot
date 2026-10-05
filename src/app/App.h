@@ -83,6 +83,8 @@ private:
     OrbitCamera m_marchOrbit; // 3D fractal viewpoint
     MarchParams m_march;
     float m_renderScale = 0.75f;
+    bool m_fastControls = true; // half resolution while the 3D view is changing
+    double m_lastMarchChange = -1e9;
     bool m_animate = false;   // sweeps sliceW / power / Julia constant over time
     OrbitCamera m_logisticOrbit;
     BifurcationParams m_bif;

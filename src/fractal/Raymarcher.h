@@ -47,10 +47,15 @@ void applyFormulaDefaults(MarchParams& params, Formula3D formula);
 class Raymarcher {
 public:
     void init(const Context& ctx, const PaletteTexture& palette);
+    // True if these inputs would render a different image than the last update's
+    // (resolution aside). Doesn't modify state.
+    bool changed(FractalParams params, const SceneParams& scene, const MarchParams& march) const;
     void update(const Context& ctx, FractalParams params, const SceneParams& scene, MarchParams march,
                 float fovY, float renderScale);
-    // Records the ray-march pass and the upscale into `target`.
-    void render(const wgpu::CommandEncoder& encoder, const wgpu::TextureView& target) const;
+    // Records the ray-march pass (only if the image changed) and the upscale into `target`.
+    void render(const wgpu::CommandEncoder& encoder, const wgpu::TextureView& target);
+    // Forces the next render to ray-march even if nothing changed (benchmarks).
+    void invalidate() { m_dirty = true; }
 
 private:
     void resizeTarget(const Context& ctx, uint32_t width, uint32_t height);
@@ -66,6 +71,14 @@ private:
     wgpu::BindGroup m_blitBindGroup;
     uint32_t m_width = 0;
     uint32_t m_height = 0;
+
+    // Inputs of the image currently in m_offscreen, for skipping unchanged frames.
+    const PaletteTexture* m_palette = nullptr;
+    FractalParams m_lastParams{};
+    SceneParams m_lastScene{};
+    MarchParams m_lastMarch{};
+    uint32_t m_lastPaletteVersion = ~0u;
+    bool m_dirty = true;
 };
 
 } // namespace fb
