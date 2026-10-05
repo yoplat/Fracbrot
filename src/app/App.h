@@ -38,6 +38,7 @@ struct AppOptions {
     float power = 0.0f;  // 0 = default; Mandelbulb exponent
     std::optional<glm::vec3> target; // 3D orbit target
     std::optional<glm::vec3> rotation; // per-iteration quaternion rotation XZ,YZ,XW in degrees
+    float renderScale = 0.0f;          // 0 = default; 3D render resolution multiplier
     std::optional<std::pair<double, double>> traceC; // pin the 2D orbit tracer to this c
 };
 

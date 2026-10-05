@@ -29,6 +29,7 @@ void usage() {
         "  --detail F          3D hit threshold in pixels (smaller = finer)\n"
         "  --power F           Mandelbulb exponent\n"
         "  --rotate XZ,YZ,XW   quaternion per-iteration rotation (degrees)\n"
+        "  --render-scale F    3D render resolution multiplier (default 0.75)\n"
         "  --trace X,Y         show the orbit of c = X + iY in 2D mode\n"
         "  --no-ui             hide the UI panel\n");
 }
@@ -68,6 +69,8 @@ int main(int argc, char** argv) {
             opts.detail = float(std::atof(argv[++i]));
         } else if (!std::strcmp(a, "--power") && hasNext) {
             opts.power = float(std::atof(argv[++i]));
+        } else if (!std::strcmp(a, "--render-scale") && hasNext) {
+            opts.renderScale = float(std::atof(argv[++i]));
         } else if (!std::strcmp(a, "--rotate") && hasNext) {
             glm::vec3 r;
             if (std::sscanf(argv[++i], "%f,%f,%f", &r.x, &r.y, &r.z) == 3) opts.rotation = r;

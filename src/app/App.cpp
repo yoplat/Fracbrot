@@ -69,6 +69,7 @@ bool App::init(const AppOptions& opts) {
     if (opts.detail > 0.0f) m_march.detail = opts.detail;
     if (opts.power > 0.0f) m_march.power = opts.power;
     if (opts.rotation) m_march.rotation = glm::vec4(glm::radians(*opts.rotation), 0.0f);
+    if (opts.renderScale > 0.0f) m_renderScale = opts.renderScale;
     resetCameras();
     if (opts.camera) m_camera = *opts.camera;
     m_mode = opts.mode;
