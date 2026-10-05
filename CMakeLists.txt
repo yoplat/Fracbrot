@@ -20,6 +20,8 @@ add_executable(fracbrot
   src/gfx/Context.cpp
   src/gfx/Readback.cpp
   src/fractal/Mandel2D.cpp
+  src/fractal/ReferenceOrbit.cpp
+  src/math/BigFixed.cpp
   src/fractal/Raymarcher.cpp
   src/fractal/Palette.cpp
   src/fractal/Terrain.cpp
@@ -35,9 +37,21 @@ else()
 endif()
 
 target_include_directories(fracbrot PRIVATE src)
+# Reference orbits run millions of bignum ops; keep them fast in debug builds too.
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  set_source_files_properties(src/math/BigFixed.cpp src/fractal/ReferenceOrbit.cpp PROPERTIES COMPILE_OPTIONS "-O2")
+endif()
 target_link_libraries(fracbrot PRIVATE fracbrot_deps)
 fracbrot_embed_shaders(fracbrot ${CMAKE_SOURCE_DIR}/shaders)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(fracbrot PRIVATE -Wall -Wextra)
+endif()
+
+# --- tests ----------------------------------------------------------------------
+if(NOT EMSCRIPTEN)
+  enable_testing()
+  add_executable(fracbrot_tests tests/test_bigfixed.cpp src/math/BigFixed.cpp src/fractal/ReferenceOrbit.cpp)
+  target_include_directories(fracbrot_tests PRIVATE src)
+  add_test(NAME fracbrot_tests COMMAND fracbrot_tests)
 endif()

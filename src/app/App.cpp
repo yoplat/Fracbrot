@@ -41,6 +41,8 @@ bool App::init(const AppOptions& opts) {
     m_palette.init(m_ctx.device);
     setPalette(opts.palette);
     m_mandel.init(m_ctx, m_palette);
+    m_mandel.setBlocking(opts.maxFrames >= 0); // automated runs need finished reference orbits
+    m_mandel.setForcePerturbation(opts.perturb);
     m_terrain.init(m_ctx, m_palette);
     m_raymarcher.init(m_ctx, m_palette);
 
@@ -229,10 +231,22 @@ void App::drawUi() {
     if (ImGui::SliderInt("iterations", &iter, 16, 20000, "%d", ImGuiSliderFlags_Logarithmic))
         m_params.maxIter = uint32_t(std::max(iter, 1));
 
-    ImGui::Text("center  %.15f", m_camera.cx);
-    ImGui::Text("        %.15f", m_camera.cy);
+    ImGui::Text("center  %s", m_camera.cx.toString(18).c_str());
+    ImGui::Text("        %s", m_camera.cy.toString(18).c_str());
     ImGui::Text("zoom    %.3e", 1.2 / m_camera.scale);
-    if (m_camera.scale < 1e-5) ImGui::TextColored({1, 0.6f, 0.2f, 1}, "float precision limit reached");
+    if (m_mode == ViewMode::Plane2D) {
+        const PerturbStatus& ps = m_mandel.status();
+        if (ps.active) {
+            ImGui::Text("deep zoom: ref %u iters%s, %d bits%s", ps.refLen, ps.refEscaped ? " (escaped)" : "",
+                        ps.precisionBits, ps.computing ? ", updating..." : "");
+        }
+        bool force = m_mandel.forcePerturbation();
+        if (ImGui::Checkbox("force perturbation", &force)) m_mandel.setForcePerturbation(force);
+        ImGui::SameLine();
+        if (ImGui::Button("copy location")) ImGui::SetClipboardText(m_camera.toString().c_str());
+    } else if (m_camera.scale < 1e-5) {
+        ImGui::TextColored({1, 0.6f, 0.2f, 1}, "float precision limit (deep zoom is 2D only)");
+    }
     if (ImGui::Button("reset (R)")) resetCameras();
 
     if (m_mode == ViewMode::Heightfield) {
@@ -357,8 +371,8 @@ bool App::frame() {
         return true;
     }
 
-    m_params.center[0] = float(m_camera.cx);
-    m_params.center[1] = float(m_camera.cy);
+    m_params.center[0] = float(m_camera.cx.toDouble());
+    m_params.center[1] = float(m_camera.cy.toDouble());
     m_params.scale = float(m_camera.scale);
     m_params.resolution[0] = float(m_ctx.width);
     m_params.resolution[1] = float(m_ctx.height);
@@ -379,7 +393,7 @@ bool App::frame() {
     sceneDesc.colorAttachments = &color;
 
     if (m_mode == ViewMode::Plane2D) {
-        m_mandel.update(m_ctx.queue, m_params);
+        m_mandel.update(m_ctx, m_params, m_camera);
         wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&sceneDesc);
         m_mandel.draw(pass);
         pass.End();
