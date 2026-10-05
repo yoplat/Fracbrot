@@ -16,6 +16,7 @@ include(EmbedShaders)
 add_executable(fracbrot
   src/app/main.cpp
   src/app/App.cpp
+  src/app/Benchmark.cpp
   src/app/Gui.cpp
   src/gfx/Context.cpp
   src/gfx/Readback.cpp

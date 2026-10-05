@@ -1,0 +1,16 @@
+{
+  "device": "Apple M1 Max",
+  "resolution": "1698x2062",
+  "scenes": [
+    {"name": "2d_overview", "median_ms": 3.1955, "p95_ms": 3.6936, "min_ms": 1.8325, "mean_ms": 3.1600, "cpu_median_ms": 0.1143, "first_ms": 4.7230},
+    {"name": "2d_seahorse", "median_ms": 9.1341, "p95_ms": 9.4528, "min_ms": 8.8847, "mean_ms": 9.1540, "cpu_median_ms": 0.0378, "first_ms": 17.0875},
+    {"name": "2d_interior", "median_ms": 75.8203, "p95_ms": 78.1999, "min_ms": 74.0237, "mean_ms": 76.0202, "cpu_median_ms": 0.0970, "first_ms": 76.9290},
+    {"name": "2d_deep", "median_ms": 10.0816, "p95_ms": 10.3136, "min_ms": 9.9777, "mean_ms": 10.1144, "cpu_median_ms": 0.0366, "first_ms": 11.2905},
+    {"name": "3d_quat", "median_ms": 14.1343, "p95_ms": 15.3485, "min_ms": 13.2066, "mean_ms": 14.2185, "cpu_median_ms": 0.0640, "first_ms": 14.3011},
+    {"name": "3d_quat_close", "median_ms": 55.8085, "p95_ms": 59.1771, "min_ms": 54.2245, "mean_ms": 56.1955, "cpu_median_ms": 0.1150, "first_ms": 58.8651},
+    {"name": "3d_julia", "median_ms": 7.7692, "p95_ms": 8.3293, "min_ms": 7.4252, "mean_ms": 7.8637, "cpu_median_ms": 0.0454, "first_ms": 7.8829},
+    {"name": "3d_bulb", "median_ms": 7.6663, "p95_ms": 8.1145, "min_ms": 7.2602, "mean_ms": 7.7008, "cpu_median_ms": 0.0418, "first_ms": 7.7797},
+    {"name": "3d_bicomplex", "median_ms": 28.5470, "p95_ms": 32.6606, "min_ms": 26.3726, "mean_ms": 28.9837, "cpu_median_ms": 0.0868, "first_ms": 30.5753},
+    {"name": "logistic", "median_ms": 6.3732, "p95_ms": 8.4467, "min_ms": 2.9609, "mean_ms": 6.2522, "cpu_median_ms": 0.4255, "first_ms": 8.4673}
+  ]
+}

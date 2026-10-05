@@ -43,6 +43,7 @@ bool Context::init(GLFWwindow* window, uint32_t w, uint32_t h) {
 
     wgpu::AdapterInfo info;
     adapter.GetInfo(&info);
+    adapterName = std::string(view(info.device));
     std::printf("adapter: %.*s (%s)\n", int(view(info.device).size()), view(info.device).data(),
                 info.backendType == wgpu::BackendType::Metal    ? "Metal"
                 : info.backendType == wgpu::BackendType::Vulkan ? "Vulkan"
@@ -131,6 +132,12 @@ void Context::present() {
     surface.Present();
     instance.ProcessEvents();
 #endif
+}
+
+void Context::waitIdle() {
+    instance.WaitAny(queue.OnSubmittedWorkDone(wgpu::CallbackMode::WaitAnyOnly,
+                                               [](wgpu::QueueWorkDoneStatus, wgpu::StringView) {}),
+                     UINT64_MAX);
 }
 
 } // namespace fb

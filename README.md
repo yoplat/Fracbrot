@@ -52,3 +52,13 @@ ctest --test-dir build/debug --output-on-failure
 The per-iteration quaternion rotation in the 3D quaternion Mandelbrot/Julia is adapted from the
 [Quaternion Mandelbrot Set 3D Viewer](https://icefractal.com/mandelbrot/quat3d.php),
 (c) Copyright Ice Fractal 2025, MIT license.
+
+## Benchmarks
+
+```sh
+./build/release/fracbrot --bench bench/new.json     # times fixed 2D/3D/logistic scenes
+python3 bench/compare.py bench/baseline.json bench/new.json
+```
+
+Each frame is timed from swapchain acquire (vsync excluded) until the GPU finishes, at the
+default 1280x800 window (2560x1600 on Retina). `bench/baseline.json` is the pre-optimization run.

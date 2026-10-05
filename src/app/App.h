@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/Benchmark.h"
 #include "app/Gui.h"
 #include "camera/Camera2D.h"
 #include "camera/OrbitCamera.h"
@@ -11,6 +12,7 @@
 #include "gfx/Context.h"
 #include "platform/Window.h"
 
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -30,6 +32,8 @@ struct AppOptions {
     std::optional<OrbitCamera> orbit; // applies to the starting 3D mode
     uint32_t maxIter = 256;
     bool perturb = false; // force perturbation rendering in 2D
+    bool bench = false;   // run the benchmark scenes and quit
+    std::string benchOut; // benchmark JSON output path
     int palette = 0;
     ViewMode mode = ViewMode::Plane2D;
     int formula = 0; // Formula3D
@@ -55,6 +59,7 @@ private:
     void handleInputOrbit(OrbitCamera& cam, float dt, double mx, double my, double scroll, bool mouseFree,
                           bool keysFree);
     void resetCameras();
+    void applyBenchScene(const BenchScene& scene);
     void animate(double time);
     void drawUi();
     void setPalette(int index);
@@ -101,6 +106,7 @@ private:
     bool m_screenshotWithUi = false;
     bool m_keyWasDown[512] = {};
     std::string m_lastScreenshot;
+    std::optional<Benchmark> m_bench;
 
     bool keyPressed(int key); // edge-triggered
 };

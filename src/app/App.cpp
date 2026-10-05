@@ -84,7 +84,34 @@ bool App::init(const AppOptions& opts) {
     if (opts.target && m_mode != ViewMode::Plane2D) activeOrbit().target = *opts.target;
     m_params.maxIter = opts.maxIter;
     m_lastTime = glfwGetTime();
+
+    if (opts.bench) {
+        m_opts.hideUi = true;
+        m_mandel.setBlocking(true);
+        m_bench.emplace(opts.benchOut);
+        applyBenchScene(benchScenes().front());
+    }
     return true;
+}
+
+void App::applyBenchScene(const BenchScene& scene) {
+    m_mode = ViewMode(scene.mode);
+    m_params = {};
+    m_params.maxIter = scene.iter;
+    m_animate = false;
+    m_autoRotate = false;
+    m_showOrbit = false;
+    m_renderScale = 0.75f;
+    applyFormulaDefaults(m_march, Formula3D(scene.formula));
+    resetCameras();
+    if (scene.view) m_camera = Camera2D::parse(scene.view).value_or(Camera2D{});
+    OrbitCamera& cam = activeOrbit();
+    if (scene.orbit) {
+        cam.yaw = scene.orbit->x;
+        cam.pitch = scene.orbit->y;
+        cam.distance = scene.orbit->z;
+    }
+    if (scene.target) cam.target = *scene.target;
 }
 
 void App::resetCameras() {
@@ -396,6 +423,8 @@ bool App::frame() {
         ImGui::EndFrame();
         return true;
     }
+    // Latency is timed from here: acquiring can block on vsync, which isn't render cost.
+    const auto frameStart = std::chrono::steady_clock::now();
 
     m_params.center[0] = float(m_camera.cx.toDouble());
     m_params.center[1] = float(m_camera.cy.toDouble());
@@ -471,6 +500,21 @@ bool App::frame() {
 
     wgpu::CommandBuffer commands = encoder.Finish();
     m_ctx.queue.Submit(1, &commands);
+
+    if (m_bench) {
+        using ms = std::chrono::duration<double, std::milli>;
+        const double cpuMs = ms(std::chrono::steady_clock::now() - frameStart).count();
+        m_ctx.waitIdle();
+        const double totalMs = ms(std::chrono::steady_clock::now() - frameStart).count();
+        if (m_bench->record(cpuMs, totalMs)) {
+            if (m_bench->finished()) {
+                m_ctx.present();
+                m_bench->report(m_ctx.adapterName, m_ctx.width, m_ctx.height);
+                return false;
+            }
+            applyBenchScene(benchScenes()[m_bench->sceneIndex()]);
+        }
+    }
 
     if (capture) {
         const std::string path = m_screenshotRequested ? nextScreenshotPath() : m_opts.screenshot;

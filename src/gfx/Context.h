@@ -2,6 +2,8 @@
 
 #include <webgpu/webgpu_cpp.h>
 
+#include <string>
+
 struct GLFWwindow;
 
 namespace fb {
@@ -22,6 +24,8 @@ public:
     // Returns the next swapchain texture, or an empty frame if it should be skipped.
     Frame acquire();
     void present();
+    // Blocks until all submitted GPU work has finished.
+    void waitIdle();
 
     wgpu::Instance instance;
     wgpu::Adapter adapter;
@@ -30,6 +34,7 @@ public:
     wgpu::Surface surface;
     wgpu::TextureFormat format = wgpu::TextureFormat::Undefined;
     wgpu::TextureView depthView; // matches the surface size
+    std::string adapterName;
     uint32_t width = 0;
     // Number of WebGPU validation/device errors reported so far.
     static inline int errorCount = 0;

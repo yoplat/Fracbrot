@@ -31,6 +31,7 @@ void usage() {
         "  --rotate XZ,YZ,XW   quaternion per-iteration rotation (degrees)\n"
         "  --render-scale F    3D render resolution multiplier (default 0.75)\n"
         "  --trace X,Y         show the orbit of c = X + iY in 2D mode\n"
+        "  --bench [FILE]      time the benchmark scenes, print a table and write JSON to FILE\n"
         "  --no-ui             hide the UI panel\n");
 }
 
@@ -79,6 +80,9 @@ int main(int argc, char** argv) {
             if (std::sscanf(argv[++i], "%lf,%lf", &x, &y) == 2) opts.traceC = std::make_pair(x, y);
         } else if (!std::strcmp(a, "--perturb")) {
             opts.perturb = true;
+        } else if (!std::strcmp(a, "--bench")) {
+            opts.bench = true;
+            if (hasNext && argv[i + 1][0] != '-') opts.benchOut = argv[++i];
         } else if (!std::strcmp(a, "--no-ui")) {
             opts.hideUi = true;
         } else {
