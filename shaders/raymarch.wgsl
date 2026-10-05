@@ -41,6 +41,7 @@ const FORMULA_BICOMPLEX: u32 = 3u;
 const FLAG_SHADOWS: u32 = 1u;
 const FLAG_AO: u32 = 2u;
 const FLAG_REFLECT: u32 = 4u;
+const COARSE_DIVISOR: u32 = 4u; // coarse march / shadow iterations = iterations / this
 const BASE_COLOR = vec3f(0.85, 0.82, 0.78);
 
 @group(0) @binding(0) var<uniform> p: Params;
@@ -89,7 +90,7 @@ fn rotateIter(q: vec4f) -> vec4f {
 
 // Quaternion iteration; |a b| = |a||b| makes the scalar derivative bound exact, and the
 // per-iteration rotation preserves lengths, so it stays valid with rotation too.
-fn deQuat(pos: vec3f, julia: bool) -> vec2f {
+fn deQuat(pos: vec3f, julia: bool, iters: u32) -> vec2f {
     let p = toSlice(pos);
     var z = vec4f(0.0);
     var c = p;
@@ -102,7 +103,7 @@ fn deQuat(pos: vec3f, julia: bool) -> vec2f {
     let dc = select(1.0, 0.0, julia);
     var r2 = dot(z, z);
     var trap = 1e10;
-    for (var i = 0u; i < m.iterations; i++) {
+    for (var i = 0u; i < iters; i++) {
         if (r2 > 256.0) { break; }
         dr = 2.0 * sqrt(r2) * dr + dc;
         z = rotateIter(qsq(z) + c);
@@ -113,13 +114,13 @@ fn deQuat(pos: vec3f, julia: bool) -> vec2f {
     return vec2f(0.5 * r * log(max(r, 1e-8)) / max(dr, 1e-8), trap);
 }
 
-fn deBulb(worldPos: vec3f) -> vec2f {
+fn deBulb(worldPos: vec3f, iters: u32) -> vec2f {
     let c = worldPos.xzy;
     var z = c;
     var dr = 1.0;
     var r = length(z);
     var trap = 1e10;
-    for (var i = 0u; i < m.iterations; i++) {
+    for (var i = 0u; i < iters; i++) {
         if (r > 2.0) { break; }
         let theta = acos(clamp(z.z / max(r, 1e-8), -1.0, 1.0)) * m.power;
         let phi = atan2(z.y, z.x) * m.power;
@@ -137,12 +138,12 @@ fn cmul(a: vec2f, b: vec2f) -> vec2f {
 }
 
 // 2D Mandelbrot distance estimate for c: (distance, orbit trap); distance 0 inside.
-fn deMandel2(c: vec2f) -> vec2f {
+fn deMandel2(c: vec2f, iters: u32) -> vec2f {
     var z = vec2f(0.0);
     var dz = vec2f(0.0);
     var r2 = 0.0;
     var trap = 1e10;
-    for (var i = 0u; i < m.iterations; i++) {
+    for (var i = 0u; i < iters; i++) {
         dz = 2.0 * cmul(z, dz) + vec2f(1.0, 0.0);
         z = cmul(z, z) + c;
         r2 = dot(z, z);
@@ -157,21 +158,35 @@ fn deMandel2(c: vec2f) -> vec2f {
 // Bicomplex q = (a, b, c, d) in idempotent form: z1 = (a - d) + i(b + c), z2 = (a + d) + i(b - c).
 // q is in the set iff both z1 and z2 are in M. Each projection stretches distances by at most
 // sqrt(2), so max(d1, d2) / sqrt(2) bounds the distance to the intersection.
-fn deBicomplex(pos: vec3f) -> vec2f {
+fn deBicomplex(pos: vec3f, iters: u32) -> vec2f {
     let q = toSlice(pos);
-    let d1 = deMandel2(vec2f(q.x - q.w, q.y + q.z));
-    let d2 = deMandel2(vec2f(q.x + q.w, q.y - q.z));
+    let d1 = deMandel2(vec2f(q.x - q.w, q.y + q.z), iters);
+    let d2 = deMandel2(vec2f(q.x + q.w, q.y - q.z), iters);
     return vec2f(max(d1.x, d2.x) * 0.70710678, min(d1.y, d2.y));
 }
 
-// (distance estimate, orbit trap)
-fn de(pos: vec3f) -> vec2f {
+// (distance estimate, orbit trap) using `iters` iterations.
+fn deN(pos: vec3f, iters: u32) -> vec2f {
     switch (m.formula) {
-        case FORMULA_BICOMPLEX: { return deBicomplex(pos); }
-        case FORMULA_QUAT_JULIA: { return deQuat(pos, true); }
-        case FORMULA_BULB: { return deBulb(pos); }
-        default: { return deQuat(pos, false); }
+        case FORMULA_BICOMPLEX: { return deBicomplex(pos, iters); }
+        case FORMULA_QUAT_JULIA: { return deQuat(pos, true, iters); }
+        case FORMULA_BULB: { return deBulb(pos, iters); }
+        default: { return deQuat(pos, false, iters); }
     }
+}
+
+fn de(pos: vec3f) -> vec2f {
+    return deN(pos, m.iterations);
+}
+
+// Iterations for the cheap estimate used to march far from the surface and for soft
+// shadows / AO. Only the bicomplex set benefits: its interior points run every iteration
+// in both projections, and fewer iterations give a containing shape, so the estimate never
+// overshoots. The quaternion orbits escape within a few iterations anyway, and with
+// per-iteration rotation a coarse estimate can skip thin fins, so they keep full iterations.
+fn coarseIterations() -> u32 {
+    if (m.formula != FORMULA_BICOMPLEX) { return m.iterations; }
+    return min(m.iterations, max(8u, m.iterations / COARSE_DIVISOR));
 }
 
 fn intersectSphere(ro: vec3f, rd: vec3f) -> vec2f {
@@ -193,7 +208,7 @@ fn softShadow(ro: vec3f, rd: vec3f) -> f32 {
     var res = 1.0;
     var t = 0.01;
     for (var i = 0; i < 64; i++) {
-        let h = de(ro + rd * t).x;
+        let h = deN(ro + rd * t, coarseIterations()).x;
         res = min(res, m.shadowSoftness * h / t);
         t += clamp(h, 0.005, 0.1);
         if (res < 0.001 || t > 3.0) { break; }
@@ -206,7 +221,7 @@ fn ambientOcclusion(pos: vec3f, nrm: vec3f) -> f32 {
     var w = 1.0;
     for (var i = 1; i <= 5; i++) {
         let h = 0.02 * f32(i);
-        occ += (h - de(pos + nrm * h).x) * w;
+        occ += (h - deN(pos + nrm * h, coarseIterations()).x) * w;
         w *= 0.7;
     }
     return clamp(1.0 - m.aoStrength * 6.0 * occ, 0.0, 1.0);
@@ -232,10 +247,17 @@ fn fs(@builtin(position) frag: vec4f) -> @location(0) vec4f {
     var hit = false;
     var trap = 0.0;
     var steps = 0u;
+    // March with the cheap estimate until it reports a hit, then refine at the same point
+    // with full iterations and continue from there.
+    var iters = coarseIterations();
     for (; steps < m.maxSteps; steps++) {
-        let d = de(ro + rd * t);
+        let d = deN(ro + rd * t, iters);
         let eps = max(t * m.pixelAngle * m.detail, 1e-6);
         if (d.x < eps) {
+            if (iters < m.iterations) {
+                iters = m.iterations;
+                continue;
+            }
             hit = true;
             trap = d.y;
             break;
