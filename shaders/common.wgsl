@@ -14,6 +14,8 @@ struct Params {
 
 const FLAG_SMOOTH: u32 = 1u;
 const BAILOUT2: f32 = 65536.0; // large radius keeps the smooth estimate accurate
+const PERIOD_EPS2: f32 = 1e-12; // relative squared distance treated as a repeated orbit point
+const PERIOD_STRIDE: u32 = 8u;   // iterations between cycle checks
 
 fn inMainBulbs(c: vec2f) -> bool {
     // Main cardioid and period-2 bulb: skip iterating points known to be inside.
@@ -28,10 +30,29 @@ fn mandelbrot(c: vec2f, maxIter: u32, smoothed: bool) -> f32 {
     if (inMainBulbs(c)) { return -1.0; }
     var z = vec2f(0.0);
     var i = 0u;
+    // Brent cycle detection: interior orbits settle into a cycle, so if z returns to a saved
+    // value the point is inside and needn't run to maxIter. The save interval doubles.
+    // Checking only every PERIOD_STRIDE iterations keeps the plain loop cheap; saves and
+    // checks both land on multiples of the stride, so any cycle is still caught once the
+    // interval exceeds lcm(period, stride).
+    var saved = vec2f(0.0);
+    var sinceSave = 0u;
+    var interval = 2u * PERIOD_STRIDE;
     loop {
+        for (var k = 0u; k < PERIOD_STRIDE; k++) {
+            if (i >= maxIter || dot(z, z) > BAILOUT2) { break; }
+            z = vec2f(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + c;
+            i++;
+        }
         if (i >= maxIter || dot(z, z) > BAILOUT2) { break; }
-        z = vec2f(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + c;
-        i++;
+        let d = z - saved;
+        if (dot(d, d) <= PERIOD_EPS2 * dot(z, z)) { return -1.0; }
+        sinceSave += PERIOD_STRIDE;
+        if (sinceSave >= interval) {
+            saved = z;
+            sinceSave = 0u;
+            interval *= 2u;
+        }
     }
     if (i >= maxIter) { return -1.0; }
     if (!smoothed) { return f32(i); }
