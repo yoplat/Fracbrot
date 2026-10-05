@@ -25,11 +25,11 @@ OrbitCamera marchHome(const MarchParams& march) {
     cam.pitch = 0.3f;
     cam.distance = 3.2f;
     if (march.formula == Formula3D::QuatMandelbrot) {
-        // Close and side-on along the real-axis needle, where the fins are visible.
-        cam.target = {-1.05f, 0.0f, 0.0f};
-        cam.yaw = 0.2f;
-        cam.pitch = 0.1f;
-        cam.distance = 1.9f;
+        // Side-on to the real axis, like Ice Fractal's default view.
+        cam.target = {-0.7f, 0.0f, 0.0f};
+        cam.yaw = 0.12f;
+        cam.pitch = 0.08f;
+        cam.distance = 3.6f;
     }
     return cam;
 }
@@ -68,6 +68,7 @@ bool App::init(const AppOptions& opts) {
     if (opts.iter3d) m_march.iterations = opts.iter3d;
     if (opts.detail > 0.0f) m_march.detail = opts.detail;
     if (opts.power > 0.0f) m_march.power = opts.power;
+    if (opts.rotation) m_march.rotation = glm::vec4(glm::radians(*opts.rotation), 0.0f);
     resetCameras();
     if (opts.camera) m_camera = *opts.camera;
     m_mode = opts.mode;
@@ -97,7 +98,7 @@ void App::animate(double time) {
     const float t = float(time);
     switch (m_march.formula) {
     case Formula3D::QuatMandelbrot:
-        m_march.sliceW = 0.5f * std::sin(t * 0.25f);
+        m_march.rotation.y = glm::radians(27.0f + 25.0f * std::sin(t * 0.2f));
         break;
     case Formula3D::QuatJulia:
         m_march.juliaC = glm::vec4(-0.291f + 0.15f * std::cos(t * 0.21f), -0.399f + 0.2f * std::sin(t * 0.17f),
@@ -243,6 +244,13 @@ void App::drawUi() {
             ImGui::SliderAngle("4D tilt", &m_march.tilt, -90.0f, 90.0f);
         }
         if (m_march.formula == Formula3D::QuatJulia) ImGui::SliderFloat4("julia c", &m_march.juliaC.x, -1.5f, 1.5f);
+        if (m_march.formula == Formula3D::QuatMandelbrot || m_march.formula == Formula3D::QuatJulia) {
+            ImGui::TextDisabled("rotation applied to z every iteration");
+            ImGui::SliderAngle("rotate XZ", &m_march.rotation.x, 0.0f, 360.0f);
+            ImGui::SliderAngle("rotate YZ", &m_march.rotation.y, 0.0f, 360.0f);
+            ImGui::SliderAngle("rotate XW", &m_march.rotation.z, 0.0f, 360.0f);
+            ImGui::TextDisabled("rotation method: icefractal.com/mandelbrot/quat3d.php");
+        }
         ImGui::Checkbox("animate", &m_animate);
 
         ImGui::SliderFloat("detail", &m_march.detail, 0.25f, 4.0f, "%.2f", ImGuiSliderFlags_Logarithmic);

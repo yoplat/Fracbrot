@@ -31,6 +31,7 @@ struct March {
     juliaC: vec4f,
     boundCenter: vec3f,
     boundRadius: f32,
+    rotation: vec4f,    // per-iteration rotation angles (XZ, YZ, XW), radians
 };
 
 const FORMULA_QUAT_MANDEL: u32 = 0u;
@@ -71,25 +72,45 @@ fn toSlice(pos: vec3f) -> vec4f {
     return vec4f(pos.x * ct - m.sliceW * st, pos.y, pos.z, pos.x * st + m.sliceW * ct);
 }
 
-// Quaternion iteration; |a b| = |a||b| makes the scalar derivative bound exact.
+// Rotates z in three fixed planes after each iteration. Adapted from the Quaternion
+// Mandelbrot Set 3D Viewer, (c) Copyright Ice Fractal 2025, MIT license,
+// https://icefractal.com/mandelbrot/quat3d.php Quaternions don't commute, so this breaks the rotational symmetry of plain
+// z² + c around the real axis and creates genuinely 3D structure. Planes are named by
+// imaginary units: XZ = (i, k), YZ = (j, k), XW = (i, real).
+fn rotateIter(q: vec4f) -> vec4f {
+    var z = q;
+    let cs = cos(m.rotation.xyz);
+    let sn = sin(m.rotation.xyz);
+    z = vec4f(z.x, z.y * cs.x - z.w * sn.x, z.z, z.y * sn.x + z.w * cs.x);
+    z = vec4f(z.x, z.y, z.z * cs.y - z.w * sn.y, z.z * sn.y + z.w * cs.y);
+    z = vec4f(z.y * sn.z + z.x * cs.z, z.y * cs.z - z.x * sn.z, z.z, z.w);
+    return z;
+}
+
+// Quaternion iteration; |a b| = |a||b| makes the scalar derivative bound exact, and the
+// per-iteration rotation preserves lengths, so it stays valid with rotation too.
 fn deQuat(pos: vec3f, julia: bool) -> vec2f {
-    var z = toSlice(pos);
-    var c = m.juliaC;
-    var dr = 1.0;
-    if (!julia) {
-        c = z;
+    let p = toSlice(pos);
+    var z = vec4f(0.0);
+    var c = p;
+    var dr = 0.0;
+    if (julia) {
+        z = p;
+        c = m.juliaC;
+        dr = 1.0;
     }
+    let dc = select(1.0, 0.0, julia);
     var r2 = dot(z, z);
-    var trap = r2;
+    var trap = 1e10;
     for (var i = 0u; i < m.iterations; i++) {
         if (r2 > 256.0) { break; }
-        dr = 2.0 * sqrt(r2) * dr + select(0.0, 1.0, !julia);
-        z = qsq(z) + c;
+        dr = 2.0 * sqrt(r2) * dr + dc;
+        z = rotateIter(qsq(z) + c);
         r2 = dot(z, z);
         trap = min(trap, r2);
     }
     let r = sqrt(r2);
-    return vec2f(0.5 * r * log(max(r, 1e-8)) / dr, trap);
+    return vec2f(0.5 * r * log(max(r, 1e-8)) / max(dr, 1e-8), trap);
 }
 
 fn deBulb(worldPos: vec3f) -> vec2f {

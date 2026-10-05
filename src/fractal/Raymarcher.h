@@ -35,8 +35,9 @@ struct MarchParams {
     glm::vec4 juliaC{-0.291f, -0.399f, 0.339f, 0.437f};
     glm::vec3 boundCenter{-0.75f, 0.0f, 0.0f};
     float boundRadius = 1.4f;
+    glm::vec4 rotation{0.0f}; // per-iteration quaternion rotation (XZ, YZ, XW, unused), radians
 };
-static_assert(sizeof(MarchParams) == 80);
+static_assert(sizeof(MarchParams) == 96);
 
 // Sensible defaults (bounds, iterations) for each formula.
 void applyFormulaDefaults(MarchParams& params, Formula3D formula);

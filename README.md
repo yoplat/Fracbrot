@@ -46,3 +46,9 @@ rebasing, and rescaled deltas below 2^-64). Zoom is limited only by the double `
 ```sh
 ctest --test-dir build/debug --output-on-failure
 ```
+
+## Credits
+
+The per-iteration quaternion rotation in the 3D quaternion Mandelbrot/Julia is adapted from the
+[Quaternion Mandelbrot Set 3D Viewer](https://icefractal.com/mandelbrot/quat3d.php),
+(c) Copyright Ice Fractal 2025, MIT license.
