@@ -166,9 +166,9 @@ void App::handleInput2D(float dt, double mx, double my, double scroll, bool mous
         if (m_window.keyDown(GLFW_KEY_RIGHT) || m_window.keyDown(GLFW_KEY_D)) m_camera.pan(-panPx, 0, h);
         if (m_window.keyDown(GLFW_KEY_UP) || m_window.keyDown(GLFW_KEY_W)) m_camera.pan(0, panPx, h);
         if (m_window.keyDown(GLFW_KEY_DOWN) || m_window.keyDown(GLFW_KEY_S)) m_camera.pan(0, -panPx, h);
-        if (m_window.keyDown(GLFW_KEY_E) || m_window.keyDown(GLFW_KEY_EQUAL))
+        if (m_window.keyDown(GLFW_KEY_Z) || m_window.keyDown(GLFW_KEY_E) || m_window.keyDown(GLFW_KEY_EQUAL))
             m_camera.zoomAt(w / 2, h / 2, w, h, std::pow(0.25, dt));
-        if (m_window.keyDown(GLFW_KEY_Q) || m_window.keyDown(GLFW_KEY_MINUS))
+        if (m_window.keyDown(GLFW_KEY_X) || m_window.keyDown(GLFW_KEY_Q) || m_window.keyDown(GLFW_KEY_MINUS))
             m_camera.zoomAt(w / 2, h / 2, w, h, std::pow(4.0, dt));
     }
 }
@@ -196,6 +196,9 @@ void App::handleInputOrbit(OrbitCamera& cam, float dt, double mx, double my, dou
         if (m_window.keyDown(GLFW_KEY_E)) move.y += 1.0f;
         if (m_window.keyDown(GLFW_KEY_Q)) move.y -= 1.0f;
         cam.target += move * step;
+
+        if (m_window.keyDown(GLFW_KEY_Z)) cam.dolly(float(std::pow(0.3, dt)));
+        if (m_window.keyDown(GLFW_KEY_X)) cam.dolly(float(std::pow(1.0 / 0.3, dt)));
     }
 }
 
@@ -327,9 +330,9 @@ void App::drawUi() {
 
     ImGui::Separator();
     if (m_mode == ViewMode::Plane2D)
-        ImGui::TextDisabled("drag: pan  scroll: zoom\nWASD/arrows: pan  Q/E: zoom");
+        ImGui::TextDisabled("drag: pan  scroll / Z X: zoom in/out\nWASD/arrows: pan");
     else
-        ImGui::TextDisabled("drag: orbit  scroll: distance\nWASD: move target  Q/E: down/up");
+        ImGui::TextDisabled("drag: orbit  scroll / Z X: zoom in/out\nWASD: move target  Q/E: down/up");
     ImGui::TextDisabled("1-3 / Tab: mode  P: screenshot");
     ImGui::End();
 }
