@@ -36,6 +36,7 @@ struct AppOptions {
     uint32_t iter3d = 0; // 0 = formula default
     float detail = 0.0f; // 0 = default; hit threshold in pixels
     float power = 0.0f;  // 0 = default; Mandelbulb exponent
+    std::optional<glm::vec3> target; // 3D orbit target
     std::optional<std::pair<double, double>> traceC; // pin the 2D orbit tracer to this c
 };
 
@@ -85,8 +86,8 @@ private:
     double m_orbitC[2] = {0.0, 0.0};
     FractalParams m_params;
     SceneParams m_scene;
-    float m_lightAzimuth = 0.9f;
-    float m_lightElevation = 0.6f;
+    float m_lightAzimuth = 0.45f;
+    float m_lightElevation = 0.7f;
 
     int64_t m_frame = 0;
     double m_lastTime = 0.0;

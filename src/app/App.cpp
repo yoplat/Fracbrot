@@ -18,12 +18,19 @@ const char* const kFormulaNames[] = {"Quaternion Mandelbrot", "Quaternion Julia"
                                       "Bicomplex Mandelbrot (Tetrabrot)"};
 static_assert(std::size(kFormulaNames) == size_t(Formula3D::Count));
 
-OrbitCamera marchHome() {
+OrbitCamera marchHome(const MarchParams& march) {
     OrbitCamera cam;
-    cam.target = {-0.75f, 0.0f, 0.0f};
-    cam.yaw = 0.45f;   // mostly side-on, so the real-axis needle is visible
+    cam.target = march.boundCenter;
+    cam.yaw = 0.45f;
     cam.pitch = 0.3f;
     cam.distance = 3.2f;
+    if (march.formula == Formula3D::QuatMandelbrot) {
+        // Close and side-on along the real-axis needle, where the fins are visible.
+        cam.target = {-1.05f, 0.0f, 0.0f};
+        cam.yaw = 0.2f;
+        cam.pitch = 0.1f;
+        cam.distance = 1.9f;
+    }
     return cam;
 }
 
@@ -71,6 +78,7 @@ bool App::init(const AppOptions& opts) {
         cam.pitch = opts.orbit->pitch;
         cam.distance = opts.orbit->distance;
     }
+    if (opts.target && m_mode != ViewMode::Plane2D) activeOrbit().target = *opts.target;
     m_params.maxIter = opts.maxIter;
     m_lastTime = glfwGetTime();
     return true;
@@ -78,8 +86,7 @@ bool App::init(const AppOptions& opts) {
 
 void App::resetCameras() {
     m_camera.reset();
-    m_marchOrbit = marchHome();
-    m_marchOrbit.target = m_march.boundCenter;
+    m_marchOrbit = marchHome(m_march);
     m_logisticOrbit = logisticHome();
 }
 
@@ -224,7 +231,7 @@ void App::drawUi() {
         int formula = int(m_march.formula);
         if (ImGui::Combo("formula", &formula, kFormulaNames, int(Formula3D::Count))) {
             applyFormulaDefaults(m_march, Formula3D(formula));
-            m_marchOrbit.target = m_march.boundCenter;
+            m_marchOrbit = marchHome(m_march);
         }
         int iters = int(m_march.iterations);
         if (ImGui::SliderInt("iterations", &iters, 2, 512, "%d", ImGuiSliderFlags_Logarithmic))

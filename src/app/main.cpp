@@ -23,6 +23,7 @@ void usage() {
         "  --palette N         palette preset index\n"
         "  --mode N            0 = 2D plane, 1 = 3D fractal, 2 = logistic map\n"
         "  --orbit YAW,PITCH,DIST  3D camera (radians)\n"
+        "  --target X,Y,Z      3D camera target\n"
         "  --formula N         3D formula: 0 = quaternion Mandelbrot, 1 = quaternion Julia, 2 = Mandelbulb, 3 = bicomplex\n"
         "  --iter3d N          3D fractal iterations\n"
         "  --detail F          3D hit threshold in pixels (smaller = finer)\n"
@@ -55,6 +56,9 @@ int main(int argc, char** argv) {
         } else if (!std::strcmp(a, "--orbit") && hasNext) {
             fb::OrbitCamera orbit;
             if (std::sscanf(argv[++i], "%f,%f,%f", &orbit.yaw, &orbit.pitch, &orbit.distance) == 3) opts.orbit = orbit;
+        } else if (!std::strcmp(a, "--target") && hasNext) {
+            glm::vec3 t;
+            if (std::sscanf(argv[++i], "%f,%f,%f", &t.x, &t.y, &t.z) == 3) opts.target = t;
         } else if (!std::strcmp(a, "--formula") && hasNext) {
             opts.formula = std::atoi(argv[++i]);
         } else if (!std::strcmp(a, "--iter3d") && hasNext) {

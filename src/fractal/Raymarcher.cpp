@@ -37,9 +37,13 @@ wgpu::RenderPipeline createFullscreenPipeline(const Context& ctx, const wgpu::Sh
 
 void applyFormulaDefaults(MarchParams& params, Formula3D formula) {
     params.formula = formula;
+    params.detail = 1.0f;
     switch (formula) {
     case Formula3D::QuatMandelbrot:
-        params.iterations = 24;
+        // The 2D set spun around the real axis: its filaments become paper-thin fins,
+        // which only show with enough iterations and a sub-pixel hit threshold.
+        params.iterations = 48;
+        params.detail = 0.5f;
         params.trapMix = 0.8f;
         params.boundCenter = {-0.75f, 0.0f, 0.0f};
         params.boundRadius = 1.4f;
