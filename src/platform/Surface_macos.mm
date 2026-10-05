@@ -26,4 +26,9 @@ wgpu::Surface createSurface(const wgpu::Instance& instance, GLFWwindow* window) 
     return instance.CreateSurface(&desc);
 }
 
+void setBackgroundApp() {
+    [NSApplication sharedApplication];
+    [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
+}
+
 } // namespace fb

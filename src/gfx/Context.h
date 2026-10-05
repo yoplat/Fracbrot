@@ -13,7 +13,8 @@ class Context {
 public:
     static constexpr wgpu::TextureFormat kDepthFormat = wgpu::TextureFormat::Depth24Plus;
 
-    bool init(GLFWwindow* window, uint32_t width, uint32_t height);
+    // `headless` renders into an offscreen texture instead of a window surface.
+    bool init(GLFWwindow* window, uint32_t width, uint32_t height, bool headless = false);
     void resize(uint32_t width, uint32_t height);
 
     struct Frame {
@@ -43,6 +44,9 @@ public:
 
 private:
     void configure();
+
+    bool m_headless = false;
+    wgpu::Texture m_offscreen;
 };
 
 } // namespace fb

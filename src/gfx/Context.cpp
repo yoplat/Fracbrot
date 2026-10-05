@@ -13,7 +13,8 @@ std::string_view view(wgpu::StringView s) { return {s.data, s.length}; }
 
 } // namespace
 
-bool Context::init(GLFWwindow* window, uint32_t w, uint32_t h) {
+bool Context::init(GLFWwindow* window, uint32_t w, uint32_t h, bool headless) {
+    m_headless = headless;
     static constexpr auto kTimedWaitAny = wgpu::InstanceFeatureName::TimedWaitAny;
     wgpu::InstanceDescriptor instanceDesc;
     instanceDesc.requiredFeatureCount = 1;
@@ -24,7 +25,7 @@ bool Context::init(GLFWwindow* window, uint32_t w, uint32_t h) {
         return false;
     }
 
-    surface = createSurface(instance, window);
+    if (!headless) surface = createSurface(instance, window);
 
     wgpu::RequestAdapterOptions adapterOpts;
     adapterOpts.compatibleSurface = surface;
@@ -76,9 +77,13 @@ bool Context::init(GLFWwindow* window, uint32_t w, uint32_t h) {
     if (!device) return false;
     queue = device.GetQueue();
 
-    wgpu::SurfaceCapabilities caps;
-    surface.GetCapabilities(adapter, &caps);
-    format = caps.formats[0];
+    if (headless) {
+        format = wgpu::TextureFormat::BGRA8Unorm; // what the Metal surface uses
+    } else {
+        wgpu::SurfaceCapabilities caps;
+        surface.GetCapabilities(adapter, &caps);
+        format = caps.formats[0];
+    }
 
     width = w;
     height = h;
@@ -87,14 +92,23 @@ bool Context::init(GLFWwindow* window, uint32_t w, uint32_t h) {
 }
 
 void Context::configure() {
-    wgpu::SurfaceConfiguration config;
-    config.device = device;
-    config.format = format;
-    config.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc;
-    config.width = width;
-    config.height = height;
-    config.presentMode = wgpu::PresentMode::Fifo;
-    surface.Configure(&config);
+    if (m_headless) {
+        wgpu::TextureDescriptor desc;
+        desc.label = "offscreen target";
+        desc.size = {width, height, 1};
+        desc.format = format;
+        desc.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc;
+        m_offscreen = device.CreateTexture(&desc);
+    } else {
+        wgpu::SurfaceConfiguration config;
+        config.device = device;
+        config.format = format;
+        config.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc;
+        config.width = width;
+        config.height = height;
+        config.presentMode = wgpu::PresentMode::Fifo;
+        surface.Configure(&config);
+    }
 
     wgpu::TextureDescriptor depthDesc;
     depthDesc.label = "depth";
@@ -112,6 +126,7 @@ void Context::resize(uint32_t w, uint32_t h) {
 }
 
 Context::Frame Context::acquire() {
+    if (m_headless) return {m_offscreen, m_offscreen.CreateView()};
     wgpu::SurfaceTexture st;
     surface.GetCurrentTexture(&st);
     switch (st.status) {
@@ -129,7 +144,7 @@ Context::Frame Context::acquire() {
 
 void Context::present() {
 #ifndef __EMSCRIPTEN__
-    surface.Present();
+    if (!m_headless) surface.Present();
     instance.ProcessEvents();
 #endif
 }

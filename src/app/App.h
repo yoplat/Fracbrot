@@ -32,7 +32,8 @@ struct AppOptions {
     std::optional<OrbitCamera> orbit; // applies to the starting 3D mode
     uint32_t maxIter = 256;
     bool perturb = false; // force perturbation rendering in 2D
-    bool bench = false;   // run the benchmark scenes and quit
+    bool bench = false;   // run the benchmark scenes and quit (implies headless)
+    bool headless = false; // render offscreen without showing a window
     std::string benchOut; // benchmark JSON output path
     int palette = 0;
     ViewMode mode = ViewMode::Plane2D;

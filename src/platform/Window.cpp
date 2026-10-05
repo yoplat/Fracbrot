@@ -1,19 +1,25 @@
 #include "platform/Window.h"
 
+#include "platform/Surface.h"
+
 #include <GLFW/glfw3.h>
 
 #include <cstdio>
 
 namespace fb {
 
-bool Window::create(int width, int height, const std::string& title) {
+bool Window::create(int width, int height, const std::string& title, bool visible) {
     glfwSetErrorCallback([](int code, const char* msg) {
         std::fprintf(stderr, "glfw error %d: %s\n", code, msg);
     });
+    if (!visible) glfwInitHint(GLFW_COCOA_MENUBAR, GLFW_FALSE);
     if (!glfwInit()) return false;
+    if (!visible) setBackgroundApp();
 
     // WebGPU owns the swapchain, GLFW must not create a GL context.
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_VISIBLE, visible ? GLFW_TRUE : GLFW_FALSE);
+    glfwWindowHint(GLFW_FOCUS_ON_SHOW, visible ? GLFW_TRUE : GLFW_FALSE);
     m_window = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
     if (!m_window) return false;
 

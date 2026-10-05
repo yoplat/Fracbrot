@@ -8,7 +8,8 @@ namespace fb {
 
 class Window {
 public:
-    bool create(int width, int height, const std::string& title);
+    // `visible = false` keeps the window hidden and the app out of the Dock (headless runs).
+    bool create(int width, int height, const std::string& title, bool visible = true);
     void destroy();
 
     bool shouldClose() const;

@@ -49,11 +49,12 @@ static_assert(std::size(kModeNames) == size_t(ViewMode::Count));
 
 bool App::init(const AppOptions& opts) {
     m_opts = opts;
-    if (!m_window.create(opts.width, opts.height, "Fracbrot")) return false;
+    const bool headless = opts.headless || opts.bench;
+    if (!m_window.create(opts.width, opts.height, "Fracbrot", !headless)) return false;
 
     int w, h;
     m_window.framebufferSize(w, h);
-    if (!m_ctx.init(m_window.handle(), uint32_t(w), uint32_t(h))) return false;
+    if (!m_ctx.init(m_window.handle(), uint32_t(w), uint32_t(h), headless)) return false;
 
     m_gui.init(m_window.handle(), m_ctx);
     m_palette.init(m_ctx.device);

@@ -36,4 +36,6 @@ wgpu::Surface createSurface(const wgpu::Instance& instance, GLFWwindow* window) 
 #endif
 }
 
+void setBackgroundApp() {}
+
 } // namespace fb

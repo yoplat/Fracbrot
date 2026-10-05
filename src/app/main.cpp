@@ -32,6 +32,7 @@ void usage() {
         "  --render-scale F    3D render resolution multiplier (default 0.75)\n"
         "  --trace X,Y         show the orbit of c = X + iY in 2D mode\n"
         "  --bench [FILE]      time the benchmark scenes, print a table and write JSON to FILE\n"
+        "  --headless          render offscreen without showing a window (for scripted runs)\n"
         "  --no-ui             hide the UI panel\n");
 }
 
@@ -83,6 +84,8 @@ int main(int argc, char** argv) {
         } else if (!std::strcmp(a, "--bench")) {
             opts.bench = true;
             if (hasNext && argv[i + 1][0] != '-') opts.benchOut = argv[++i];
+        } else if (!std::strcmp(a, "--headless")) {
+            opts.headless = true;
         } else if (!std::strcmp(a, "--no-ui")) {
             opts.hideUi = true;
         } else {
