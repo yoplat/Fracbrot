@@ -41,6 +41,25 @@ rebasing, and rescaled deltas below 2^-64). Zoom is limited only by the double `
 
 "copy location" in the UI copies the current view in the same `X,Y,SCALE` format.
 
+## 3D fractals
+
+Formulas (3D mode, `--formula N`): quaternion Mandelbrot / Julia, Mandelbulb, bicomplex
+(Tetrabrot), the hypercomplex Mandelbrot (default) and the quaternion with Syntopia's flip.
+The hypercomplex squaring (x² − y² − z² − w², 2(xy + zw), 2(xz − yw), 2(xw + yz)) is the
+commuting-units system behind Yann Le Bihan's "quaternion" video.
+
+Navigation: scroll zooms toward the surface under the cursor, drag orbits the grabbed point,
+right/shift-drag pans, WASD/QE fly with speed scaled to the distance to the surface.
+Below 0.01 from the surface the quaternion family and hypercomplex formulas switch to
+perturbation (offsets from a double-precision reference orbit), so close-ups stay sharp down
+to ~1e-8. When the view stops moving it refines with up to 16 jittered samples
+(progressive anti-aliasing).
+
+## Buddhabrot
+
+Mode 4 (`--mode 3`): GPU-accumulated Buddhabrot with Nebulabrot coloring (one histogram channel
+per iteration limit), upright by default; pan/zoom restart the accumulation.
+
 ## Tests
 
 ```sh
