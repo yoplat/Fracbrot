@@ -16,6 +16,9 @@ namespace {
 
 // How long the 3D view must be unchanged before rendering at full quality again.
 constexpr double kSettleSeconds = 0.15;
+// Camera clearance to the 3D surface below which rendering switches to perturbation.
+// Float world coordinates start to visibly quantize around 0.002.
+constexpr double kPerturbBelowClearance = 0.01;
 
 const char* const kModeNames[] = {"2D plane", "3D fractal", "Logistic map", "Buddhabrot"};
 const char* const kFormulaNames[] = {"Quaternion Mandelbrot", "Quaternion Julia", "Mandelbulb",
@@ -81,6 +84,7 @@ bool App::init(const AppOptions& opts) {
     m_mandel.init(m_ctx, m_palette);
     m_mandel.setBlocking(opts.maxFrames >= 0); // automated runs need finished reference orbits
     m_mandel.setForcePerturbation(opts.perturb);
+    m_forcePerturb3D = opts.perturb;
     m_raymarcher.init(m_ctx, m_palette);
     m_bifurcation.init(m_ctx, m_palette);
     m_orbitTracer.init(m_ctx);
@@ -379,6 +383,12 @@ void App::drawUi() {
         if (ImGui::SliderInt("max steps", &steps, 32, 1000)) m_march.maxSteps = uint32_t(steps);
         ImGui::SliderFloat("render scale", &m_renderScale, 0.25f, 2.0f);
         ImGui::Checkbox("fast controls (half res while moving)", &m_fastControls);
+        if (supportsPerturbation(m_march.formula)) {
+            ImGui::Checkbox("force deep-zoom path", &m_forcePerturb3D);
+            ImGui::SameLine();
+            ImGui::TextDisabled(m_perturbActive ? "(perturbation on)" : "(off)");
+        }
+        ImGui::Text("distance to surface %.3e", clearance(m_marchOrbit, m_march));
         ImGui::SliderFloat("trap color", &m_march.trapMix, 0.0f, 1.0f);
         ImGui::CheckboxFlags("shadows", &m_march.flags, kMarchShadows);
         ImGui::SameLine();
@@ -496,11 +506,16 @@ void App::setPalette(int index) {
     m_palette.upload(m_ctx.queue, presets[size_t(m_paletteIndex)]);
 }
 
-void App::updateScene(const OrbitCamera& orbit) {
+void App::updateScene(const OrbitCamera& orbit, std::optional<glm::dvec3> origin) {
     const float aspect = float(m_ctx.width) / float(std::max(m_ctx.height, 1u));
-    m_scene.viewProj = orbit.projection(aspect) * orbit.view();
+    // With an origin the scene is expressed relative to it (the 3D fractal renders relative
+    // to the camera so deep zooms keep their precision).
+    // The ray-marcher only uses the inverse for ray directions, so it gets fixed near/far
+    // planes: tying them to a tiny camera distance would make the inverse ill-conditioned.
+    const glm::mat4 proj = origin ? glm::perspective(orbit.fovY, aspect, 0.1f, 100.0f) : orbit.projection(aspect);
+    m_scene.viewProj = proj * (origin ? orbit.viewFrom(*origin) : orbit.view());
     m_scene.invViewProj = glm::inverse(m_scene.viewProj);
-    m_scene.camPos = glm::vec4(orbit.position(), 1.0f);
+    m_scene.camPos = glm::vec4(origin ? glm::vec3(orbit.positionD() - *origin) : orbit.position(), 1.0f);
     const float ce = std::cos(m_lightElevation);
     m_scene.lightDir = glm::vec4(ce * std::sin(m_lightAzimuth), std::sin(m_lightElevation),
                                  ce * std::cos(m_lightAzimuth), 0.0f);
@@ -603,15 +618,20 @@ bool App::frame() {
         m_bifurcation.draw(pass);
         pass.End();
     } else {
-        updateScene(m_marchOrbit);
+        const glm::dvec3 origin = m_marchOrbit.positionD();
+        updateScene(m_marchOrbit, origin);
+        // Deep zoom: once the camera is close to the surface, iterate offsets from a
+        // double-precision reference orbit so float precision doesn't pixelate the detail.
+        m_perturbActive = supportsPerturbation(m_march.formula) && !m_opts.noPerturb &&
+                          (m_forcePerturb3D || clearance(m_marchOrbit, m_march) < kPerturbBelowClearance);
         // Fast controls: render at half resolution while the view is changing, then once at
         // full quality when it settles. Unchanged frames reuse the last image.
-        if (m_raymarcher.changed(m_params, m_scene, m_march)) m_lastMarchChange = now;
+        if (m_raymarcher.changed(m_params, m_scene, m_march, origin, m_perturbActive)) m_lastMarchChange = now;
         const bool automated = m_bench || m_opts.maxFrames >= 0; // scripted runs: always full quality
         const bool moving = m_fastControls && !automated && now - m_lastMarchChange < kSettleSeconds;
         const float scale = moving ? 0.5f * m_renderScale : m_renderScale;
         if (m_bench) m_raymarcher.invalidate();
-        m_raymarcher.update(m_ctx, m_params, m_scene, m_march, m_marchOrbit.fovY, scale);
+        m_raymarcher.update(m_ctx, m_params, m_scene, m_march, m_marchOrbit.fovY, scale, origin, m_perturbActive);
         m_raymarcher.render(encoder, target.view);
     }
 

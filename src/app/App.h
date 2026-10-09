@@ -33,6 +33,7 @@ struct AppOptions {
     std::optional<OrbitCamera> orbit; // applies to the starting 3D mode
     uint32_t maxIter = 256;
     bool perturb = false; // force perturbation rendering in 2D
+    bool noPerturb = false; // never use 3D perturbation (comparisons)
     bool bench = false;   // run the benchmark scenes and quit (implies headless)
     bool headless = false; // render offscreen without showing a window
     std::string benchOut; // benchmark JSON output path
@@ -42,7 +43,7 @@ struct AppOptions {
     uint32_t iter3d = 0; // 0 = formula default
     float detail = 0.0f; // 0 = default; hit threshold in pixels
     float power = 0.0f;  // 0 = default; Mandelbulb exponent
-    std::optional<glm::vec3> target; // 3D orbit target
+    std::optional<glm::dvec3> target; // 3D orbit target
     std::optional<glm::vec3> rotation; // per-iteration quaternion rotation XZ,YZ,XW in degrees
     float renderScale = 0.0f;          // 0 = default; 3D render resolution multiplier
     std::optional<std::pair<double, double>> traceC; // pin the 2D orbit tracer to this c
@@ -68,7 +69,7 @@ private:
     void animate(double time);
     void drawUi();
     void setPalette(int index);
-    void updateScene(const OrbitCamera& orbit);
+    void updateScene(const OrbitCamera& orbit, std::optional<glm::dvec3> origin = std::nullopt);
     OrbitCamera& activeOrbit();
     std::string nextScreenshotPath() const;
 
@@ -91,6 +92,8 @@ private:
     MarchParams m_march;
     float m_renderScale = 0.75f;
     bool m_fastControls = true; // half resolution while the 3D view is changing
+    bool m_forcePerturb3D = false;
+    bool m_perturbActive = false;
     double m_lastMarchChange = -1e9;
     bool m_animate = false;   // sweeps sliceW / power / Julia constant over time
     OrbitCamera m_logisticOrbit;

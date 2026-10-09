@@ -9,6 +9,11 @@
 //      ik = ki = -j, jk = kj = i (the squaring behind Yann Le Bihan's "quaternion" video)
 //   5: quaternion Mandelbrot with Syntopia's flip: z0 = c with z.yz = -z.zy, then q <- q² + c
 // For the quaternion formulas world x is the real axis.
+//
+// All positions here are relative to `m.refOrigin` (the camera), so detail far below float
+// resolution of world coordinates stays representable. For deep zooms the quaternion family
+// and the hypercomplex set are iterated by perturbation: each pixel iterates its offset from
+// a double-precision reference orbit computed on the CPU at refOrigin (`refOrbit`).
 
 struct Scene {
     viewProj: mat4x4f,
@@ -35,6 +40,10 @@ struct March {
     boundCenter: vec3f,
     boundRadius: f32,
     rotation: vec4f,    // per-iteration rotation angles (XZ, YZ, XW), radians
+    refOrigin: vec4f,   // world position of the relative-coordinate origin
+    refLen: u32,        // entries in refOrbit
+    perturb: u32,       // 1 = iterate offsets from the reference orbit
+    jitter: vec2f,      // sub-pixel sample offset (progressive anti-aliasing)
 };
 
 const FORMULA_QUAT_MANDEL: u32 = 0u;
@@ -46,6 +55,9 @@ const FORMULA_QUAT_FLIP: u32 = 5u;
 const FLAG_SHADOWS: u32 = 1u;
 const FLAG_AO: u32 = 2u;
 const FLAG_REFLECT: u32 = 4u;
+// Set per pipeline: the perturbation pipeline is only used for deep zooms, and leaving its
+// code out of the regular one keeps register pressure (and so speed) where it was.
+override PERTURB_PATH: bool = false;
 const HYPER_BAILOUT2: f32 = 1e4;  // large bailout keeps the gradient estimate accurate
 const COARSE_DIVISOR: u32 = 4u; // coarse march / shadow iterations = iterations / this
 const BASE_COLOR = vec3f(0.85, 0.82, 0.78);
@@ -55,6 +67,7 @@ const BASE_COLOR = vec3f(0.85, 0.82, 0.78);
 @group(0) @binding(2) var<uniform> m: March;
 @group(0) @binding(3) var paletteTex: texture_2d<f32>;
 @group(0) @binding(4) var paletteSampler: sampler;
+@group(0) @binding(5) var<storage, read> refOrbit: array<vec4f>;
 
 struct VsOut {
     @builtin(position) pos: vec4f,
@@ -231,8 +244,108 @@ fn deBicomplex(pos: vec3f, iters: u32) -> vec2f {
     return vec2f(max(d1.x, d2.x) * 0.70710678, min(d1.y, d2.y));
 }
 
+// ---- Perturbation (deep zoom) ----
+// With z = Z_n + e (Z the reference orbit) and c = C + d, every formula here is a polynomial
+// plus a linear rotation, so e can be iterated exactly from Z_n, e and d. Small e keeps its
+// relative precision in f32 even when d is far below the resolution of world coordinates.
+
+// The linear part of toSlice: offset in the 4D slice for a world offset q.
+fn sliceLinear(q: vec3f) -> vec4f {
+    let ct = cos(m.tilt);
+    let st = sin(m.tilt);
+    return vec4f(q.x * ct, q.y, q.z, q.x * st);
+}
+
+// a b + b a for quaternions (the cross terms of (Z + e)²).
+fn qsym(a: vec4f, b: vec4f) -> vec4f {
+    return vec4f(2.0 * (a.x * b.x - dot(a.yzw, b.yzw)), 2.0 * (a.x * b.yzw + b.x * a.yzw));
+}
+
+// Zhuoran's rebasing: once the orbit is closer to the reference's start than to the current
+// reference point (or the reference runs out), restart from index 0 with e = z - Z_0.
+fn rebase(z: vec4f, e: ptr<function, vec4f>, mi: ptr<function, u32>) {
+    let back0 = z - refOrbit[0];
+    if (*mi + 1u >= m.refLen || dot(back0, back0) < dot(*e, *e)) {
+        *e = back0;
+        *mi = 0u;
+    }
+}
+
+// Quaternion family by perturbation. kind: 0 Mandelbrot, 1 Julia, 2 Syntopia flip.
+fn deQuatP(q: vec3f, kind: u32, iters: u32) -> vec2f {
+    let dq = sliceLinear(q);
+    var e = vec4f(0.0);
+    var delta = dq;
+    var dr = 0.0;
+    var dc = 1.0;
+    if (kind == 1u) {
+        e = dq;
+        delta = vec4f(0.0);
+        dr = 1.0;
+        dc = 0.0;
+    } else if (kind == 2u) {
+        e = vec4f(dq.x, -dq.z, -dq.y, dq.w);
+        dr = 1.0;
+    }
+    var mi = 0u;
+    var z = refOrbit[0] + e;
+    var r2 = dot(z, z);
+    var trap = select(1e10, r2, kind == 2u);
+    for (var i = 0u; i < iters; i++) {
+        if (r2 > 256.0) { break; }
+        dr = 2.0 * sqrt(r2) * dr + dc;
+        e = rotateIter(qsym(refOrbit[mi], e) + qsq(e) + delta);
+        mi++;
+        z = refOrbit[mi] + e;
+        r2 = dot(z, z);
+        trap = min(trap, r2);
+        rebase(z, &e, &mi);
+    }
+    let r = sqrt(r2);
+    return vec2f(0.5 * r * log(max(r, 1e-30)) / max(dr, 1e-30), trap);
+}
+
+// Hypercomplex set by perturbation (commutative: (Z + e)² = Z² + 2Ze + e²).
+fn deHyperP(q: vec3f, iters: u32) -> vec2f {
+    let delta = sliceLinear(q);
+    let e0 = vec4f(cos(m.tilt), 0.0, 0.0, sin(m.tilt));
+    var e = vec4f(0.0);
+    var mi = 0u;
+    var z = refOrbit[0];
+    var d0 = vec4f(0.0);
+    var d1 = vec4f(0.0);
+    var d2 = vec4f(0.0);
+    var r2 = 0.0;
+    var trap = 1e10;
+    for (var i = 0u; i < iters; i++) {
+        d0 = rotateIter(2.0 * hmul(z, d0) + e0);
+        d1 = rotateIter(2.0 * hmul(z, d1) + vec4f(0.0, 1.0, 0.0, 0.0));
+        d2 = rotateIter(2.0 * hmul(z, d2) + vec4f(0.0, 0.0, 1.0, 0.0));
+        e = rotateIter(2.0 * hmul(refOrbit[mi], e) + hmul(e, e) + delta);
+        mi++;
+        z = refOrbit[mi] + e;
+        r2 = dot(z, z);
+        trap = min(trap, r2);
+        if (r2 > HYPER_BAILOUT2) { break; }
+        rebase(z, &e, &mi);
+    }
+    if (r2 <= HYPER_BAILOUT2) { return vec2f(0.0, trap); }
+    let g = vec3f(dot(d0, z), dot(d1, z), dot(d2, z));
+    return vec2f(0.25 * r2 * log(r2) / max(length(g), 1e-30), trap);
+}
+
 // (distance estimate, orbit trap) using `iters` iterations.
-fn deN(pos: vec3f, iters: u32) -> vec2f {
+// `q` is relative to m.refOrigin.
+fn deN(q: vec3f, iters: u32) -> vec2f {
+    if (PERTURB_PATH) {
+        switch (m.formula) {
+            case FORMULA_QUAT_JULIA: { return deQuatP(q, 1u, iters); }
+            case FORMULA_QUAT_FLIP: { return deQuatP(q, 2u, iters); }
+            case FORMULA_HYPERCOMPLEX: { return deHyperP(q, iters); }
+            default: { return deQuatP(q, 0u, iters); }
+        }
+    }
+    let pos = m.refOrigin.xyz + q;
     switch (m.formula) {
         case FORMULA_BICOMPLEX: { return deBicomplex(pos, iters); }
         case FORMULA_HYPERCOMPLEX: { return deHyper(pos, iters); }
@@ -272,24 +385,26 @@ fn calcNormal(pos: vec3f, eps: f32) -> vec3f {
                      k.yxy * de(pos + k.yxy * eps).x + k.xxx * de(pos + k.xxx * eps).x);
 }
 
-fn softShadow(ro: vec3f, rd: vec3f) -> f32 {
+// `u` scales the shadow and AO search distances: 1 at normal viewing distances, smaller in
+// close-ups so they match the size of the detail on screen.
+fn softShadow(ro: vec3f, rd: vec3f, u: f32) -> f32 {
     var res = 1.0;
-    var t = 0.01;
+    var t = 0.01 * u;
     for (var i = 0; i < 32; i++) {
         let h = deN(ro + rd * t, coarseIterations()).x;
         res = min(res, m.shadowSoftness * h / t);
-        t += clamp(h, 0.01, 0.2);
-        if (res < 0.001 || t > 3.0) { break; }
+        t += clamp(h, 0.01 * u, 0.2 * u);
+        if (res < 0.001 || t > 3.0 * u) { break; }
     }
     return clamp(res, 0.0, 1.0);
 }
 
-fn ambientOcclusion(pos: vec3f, nrm: vec3f) -> f32 {
+fn ambientOcclusion(pos: vec3f, nrm: vec3f, u: f32) -> f32 {
     var occ = 0.0;
     var w = 1.0;
     for (var i = 1; i <= 5; i++) {
-        let h = 0.02 * f32(i);
-        occ += (h - deN(pos + nrm * h, coarseIterations()).x) * w;
+        let h = 0.02 * f32(i) * u;
+        occ += (h - deN(pos + nrm * h, coarseIterations()).x) / u * w;
         w *= 0.7;
     }
     return clamp(1.0 - m.aoStrength * 6.0 * occ, 0.0, 1.0);
@@ -302,7 +417,8 @@ fn background(rd: vec3f) -> vec3f {
 
 @fragment
 fn fs(@builtin(position) frag: vec4f) -> @location(0) vec4f {
-    let ndc = vec2f(frag.x / p.resolution.x * 2.0 - 1.0, 1.0 - frag.y / p.resolution.y * 2.0);
+    let px = frag.xy + m.jitter;
+    let ndc = vec2f(px.x / p.resolution.x * 2.0 - 1.0, 1.0 - px.y / p.resolution.y * 2.0);
     let farPoint = scene.invViewProj * vec4f(ndc, 1.0, 1.0);
     let ro = scene.camPos.xyz;
     let rd = normalize(farPoint.xyz / farPoint.w - ro);
@@ -320,7 +436,7 @@ fn fs(@builtin(position) frag: vec4f) -> @location(0) vec4f {
     var iters = coarseIterations();
     for (; steps < m.maxSteps; steps++) {
         let d = deN(ro + rd * t, iters);
-        let eps = max(t * m.pixelAngle * m.detail, 1e-6);
+        let eps = max(t * m.pixelAngle * m.detail, 1e-30);
         if (d.x < eps) {
             if (iters < m.iterations) {
                 iters = m.iterations;
@@ -339,7 +455,8 @@ fn fs(@builtin(position) frag: vec4f) -> @location(0) vec4f {
     if (!hit) { return vec4f(bg + vec3f(0.3, 0.45, 0.7) * glow * glow * 0.6, 1.0); }
 
     let pos = ro + rd * t;
-    let nrm = calcNormal(pos, max(t * m.pixelAngle, 1e-5));
+    let nrm = calcNormal(pos, max(t * m.pixelAngle, 1e-30));
+    let u = min(1.0, t / 0.5);
     let l = normalize(scene.lightDir.xyz);
 
     let tc = paletteCoord(sqrt(sqrt(trap)) * 48.0, p.colorDensity, p.colorOffset);
@@ -347,9 +464,9 @@ fn fs(@builtin(position) frag: vec4f) -> @location(0) vec4f {
     let albedo = mix(BASE_COLOR, trapColor, m.trapMix);
 
     var shadow = 1.0;
-    if ((m.flags & FLAG_SHADOWS) != 0u) { shadow = softShadow(pos + nrm * 0.002, l); }
+    if ((m.flags & FLAG_SHADOWS) != 0u) { shadow = softShadow(pos + nrm * 0.002 * u, l, u); }
     var ao = 1.0;
-    if ((m.flags & FLAG_AO) != 0u) { ao = ambientOcclusion(pos, nrm); }
+    if ((m.flags & FLAG_AO) != 0u) { ao = ambientOcclusion(pos, nrm, u); }
 
     let diffuse = max(dot(nrm, l), 0.0) * shadow;
     let spec = pow(max(dot(nrm, normalize(l - rd)), 0.0), 48.0) * shadow * 0.5;

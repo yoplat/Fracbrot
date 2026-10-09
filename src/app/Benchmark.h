@@ -17,10 +17,12 @@ struct BenchScene {
     uint32_t iter = 256;          // 2D / plane iterations
     int formula = 0;              // Formula3D
     std::optional<glm::vec3> orbit;  // yaw, pitch, distance
-    std::optional<glm::vec3> target;
+    std::optional<glm::dvec3> target;
 };
 
 const std::vector<BenchScene>& benchScenes();
+// Restricts benchScenes() to scenes whose name contains `substring`.
+void setBenchFilter(const std::string& substring);
 
 struct BenchResult {
     std::string name;

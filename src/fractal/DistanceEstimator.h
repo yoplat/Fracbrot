@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 
 #include <optional>
+#include <vector>
 
 namespace fb {
 
@@ -15,6 +16,11 @@ double distanceEstimate(const MarchParams& m, glm::dvec3 pos);
 
 // The world -> 4D slice mapping used by the quaternion-family formulas (see toSlice in the shader).
 glm::dvec4 toSlice(const MarchParams& m, glm::dvec3 pos);
+
+// Reference orbit Z_0, Z_1, ... at world point `origin` for the perturbation path of the
+// quaternion family / hypercomplex formulas, computed in double precision. Stops after the
+// orbit escapes far outside the set or after `maxLen` entries; always at least 2 entries.
+std::vector<glm::vec4> referenceOrbit(const MarchParams& m, glm::dvec3 origin, uint32_t maxLen);
 
 // Marches from `origin` along unit `dir` against the fractal. `pixelAngle` sets the hit
 // threshold like the shader does. Returns the hit distance along the ray, if any.

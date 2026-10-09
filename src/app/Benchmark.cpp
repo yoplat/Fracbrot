@@ -3,10 +3,13 @@
 #include <algorithm>
 #include <cstdio>
 #include <numeric>
+#include <string_view>
 
 namespace fb {
 
-const std::vector<BenchScene>& benchScenes() {
+namespace {
+
+const std::vector<BenchScene>& allScenes() {
     static const std::vector<BenchScene> scenes = {
         {.name = "2d_overview", .mode = 0, .view = "-0.5,0,1.2", .iter = 256},
         {.name = "2d_seahorse", .mode = 0, .view = "-0.7453,0.1127,0.003", .iter = 1000},
@@ -20,10 +23,29 @@ const std::vector<BenchScene>& benchScenes() {
         {.name = "3d_bulb", .mode = 1, .formula = 2},
         {.name = "3d_bicomplex", .mode = 1, .formula = 3},
         {.name = "3d_hyper", .mode = 1, .formula = 4},
+        // 1e-6 from the surface: only renders correctly through the perturbation path.
+        {.name = "3d_hyper_deep", .mode = 1, .formula = 4, .orbit = glm::vec3(0.15f, 0.06f, 1e-6f),
+         .target = glm::dvec3(-0.85993959741769599, 0.016103093369058373, 0.2650589783088681)},
         {.name = "logistic", .mode = 2},
         {.name = "buddhabrot", .mode = 3},
     };
     return scenes;
+}
+
+std::vector<BenchScene>& activeScenes() {
+    static std::vector<BenchScene> scenes = allScenes();
+    return scenes;
+}
+
+} // namespace
+
+const std::vector<BenchScene>& benchScenes() { return activeScenes(); }
+
+void setBenchFilter(const std::string& substring) {
+    activeScenes().clear();
+    for (const BenchScene& s : allScenes()) {
+        if (std::string_view(s.name).find(substring) != std::string_view::npos) activeScenes().push_back(s);
+    }
 }
 
 namespace {

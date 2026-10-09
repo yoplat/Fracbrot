@@ -32,6 +32,8 @@ void usage() {
         "  --render-scale F    3D render resolution multiplier (default 0.75)\n"
         "  --trace X,Y         show the orbit of c = X + iY in 2D mode\n"
         "  --bench [FILE]      time the benchmark scenes, print a table and write JSON to FILE\n"
+        "  --bench-only NAME   only run benchmark scenes whose name contains NAME\n"
+        "  --no-perturb        never use perturbation in 3D (for comparisons)\n"
         "  --headless          render offscreen without showing a window (for scripted runs)\n"
         "  --no-ui             hide the UI panel\n");
 }
@@ -58,11 +60,17 @@ int main(int argc, char** argv) {
         } else if (!std::strcmp(a, "--mode") && hasNext) {
             opts.mode = fb::ViewMode(std::clamp(std::atoi(argv[++i]), 0, int(fb::ViewMode::Count) - 1));
         } else if (!std::strcmp(a, "--orbit") && hasNext) {
-            fb::OrbitCamera orbit;
-            if (std::sscanf(argv[++i], "%f,%f,%f", &orbit.yaw, &orbit.pitch, &orbit.distance) == 3) opts.orbit = orbit;
+            double yaw, pitch, distance;
+            if (std::sscanf(argv[++i], "%lf,%lf,%lf", &yaw, &pitch, &distance) == 3) {
+                fb::OrbitCamera orbit;
+                orbit.yaw = float(yaw);
+                orbit.pitch = float(pitch);
+                orbit.distance = distance;
+                opts.orbit = orbit;
+            }
         } else if (!std::strcmp(a, "--target") && hasNext) {
-            glm::vec3 t;
-            if (std::sscanf(argv[++i], "%f,%f,%f", &t.x, &t.y, &t.z) == 3) opts.target = t;
+            glm::dvec3 t;
+            if (std::sscanf(argv[++i], "%lf,%lf,%lf", &t.x, &t.y, &t.z) == 3) opts.target = t;
         } else if (!std::strcmp(a, "--formula") && hasNext) {
             opts.formula = std::atoi(argv[++i]);
         } else if (!std::strcmp(a, "--iter3d") && hasNext) {
@@ -84,6 +92,10 @@ int main(int argc, char** argv) {
         } else if (!std::strcmp(a, "--bench")) {
             opts.bench = true;
             if (hasNext && argv[i + 1][0] != '-') opts.benchOut = argv[++i];
+        } else if (!std::strcmp(a, "--bench-only") && hasNext) {
+            fb::setBenchFilter(argv[++i]);
+        } else if (!std::strcmp(a, "--no-perturb")) {
+            opts.noPerturb = true;
         } else if (!std::strcmp(a, "--headless")) {
             opts.headless = true;
         } else if (!std::strcmp(a, "--no-ui")) {

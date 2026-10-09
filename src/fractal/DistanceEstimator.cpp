@@ -144,6 +144,31 @@ double distanceEstimate(const MarchParams& m, glm::dvec3 pos) {
     }
 }
 
+std::vector<glm::vec4> referenceOrbit(const MarchParams& m, glm::dvec3 origin, uint32_t maxLen) {
+    const dvec4 c = toSlice(m, origin);
+    dvec4 z{0.0};
+    dvec4 k = c;
+    bool commutative = false;
+    switch (m.formula) {
+    case Formula3D::QuatJulia:
+        z = c;
+        k = dvec4(m.juliaC);
+        break;
+    case Formula3D::QuatFlip: z = {c.x, -c.z, -c.y, c.w}; break;
+    case Formula3D::Hypercomplex: commutative = true; break;
+    default: break;
+    }
+    std::vector<glm::vec4> orbit;
+    orbit.reserve(maxLen);
+    orbit.push_back(glm::vec4(z));
+    while (orbit.size() < std::max<uint32_t>(maxLen, 2)) {
+        z = rotateIter(m, (commutative ? hmul(z, z) : qsq(z)) + k);
+        orbit.push_back(glm::vec4(z));
+        if (glm::dot(z, z) > 1e8) break;
+    }
+    return orbit;
+}
+
 std::optional<double> raycast(const MarchParams& m, glm::dvec3 origin, glm::dvec3 dir, double pixelAngle) {
     // Clip to the bounding sphere, as the shader does.
     const dvec3 oc = origin - dvec3(m.boundCenter);
