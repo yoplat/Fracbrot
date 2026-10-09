@@ -21,6 +21,10 @@ namespace {
 
 constexpr uint32_t kAccumWorkgroup = 64;
 constexpr uint32_t kReduceGroups = 256;
+// Samples per command buffer. Long-running or deeply queued GPU work trips macOS's watchdog
+// ("Impacting Interactivity"), especially while other apps use the GPU, so each frame's
+// accumulation is split into chunks of about 1M samples (~6 ms each on an M1 Max).
+constexpr uint32_t kChunkSamples = 1u << 20;
 
 wgpu::ComputePipeline createCompute(const Context& ctx, const char* code, const char* label) {
     wgpu::ComputePipelineDescriptor desc;
@@ -31,6 +35,12 @@ wgpu::ComputePipeline createCompute(const Context& ctx, const char* code, const 
 }
 
 // The parts of the parameters that determine what the histogram holds.
+void waitForGpu(const Context& ctx) {
+    ctx.instance.WaitAny(ctx.queue.OnSubmittedWorkDone(wgpu::CallbackMode::WaitAnyOnly,
+                                                       [](wgpu::QueueWorkDoneStatus, wgpu::StringView) {}),
+                         UINT64_MAX);
+}
+
 BuddhaParams histogramKey(BuddhaParams p) {
     p.frame = 0;
     p.samplesPerThread = 0;
@@ -155,25 +165,46 @@ void Buddhabrot::update(const Context& ctx, const Camera2D& view, const BuddhaSe
     m_accumulate = !s.paused;
     p.samplesPerThread = 4;
     m_workgroups = std::max(1u, s.samplesPerFrame / (kAccumWorkgroup * p.samplesPerThread));
-    if (m_accumulate) ++p.frame;
-    ctx.queue.WriteBuffer(m_uniforms, 0, &p, sizeof(p));
 }
 
-void Buddhabrot::compute(const wgpu::CommandEncoder& encoder) {
+void Buddhabrot::recordAccumulate(const Context& ctx, const wgpu::CommandEncoder& encoder, uint32_t workgroups) {
+    // Each chunk gets its own RNG seed; queue writes and submits execute in order, so the
+    // uniform written here is the one the following submission of `encoder` sees.
+    if (workgroups > 0) ++m_params.frame;
+    ctx.queue.WriteBuffer(m_uniforms, 0, &m_params, sizeof(m_params));
     if (m_resetPending) {
         encoder.ClearBuffer(m_hist, 0, m_histBytes);
         m_samples = 0;
         m_resetPending = false;
     }
-    encoder.ClearBuffer(m_max, 0, 16);
-
+    if (workgroups == 0) return;
     wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
-    if (m_accumulate) {
-        pass.SetPipeline(m_accumPipeline);
-        pass.SetBindGroup(0, m_accumBindGroup);
-        pass.DispatchWorkgroups(m_workgroups);
-        m_samples += uint64_t(m_workgroups) * kAccumWorkgroup * m_params.samplesPerThread;
+    pass.SetPipeline(m_accumPipeline);
+    pass.SetBindGroup(0, m_accumBindGroup);
+    pass.DispatchWorkgroups(workgroups);
+    pass.End();
+    m_samples += uint64_t(workgroups) * kAccumWorkgroup * m_params.samplesPerThread;
+}
+
+void Buddhabrot::compute(const Context& ctx, const wgpu::CommandEncoder& encoder) {
+    const uint32_t chunk = kChunkSamples / (kAccumWorkgroup * m_params.samplesPerThread);
+    uint32_t remaining = m_accumulate ? m_workgroups : 0;
+    // Never queue more than one chunk: wait for the previous frame (and each chunk) to finish
+    // first. Without this, runs that aren't paced by a display (headless) pile up seconds of
+    // GPU work and macOS kills it.
+    if (remaining > 0) waitForGpu(ctx);
+    while (remaining > chunk) {
+        wgpu::CommandEncoder chunkEncoder = ctx.device.CreateCommandEncoder();
+        recordAccumulate(ctx, chunkEncoder, chunk);
+        wgpu::CommandBuffer commands = chunkEncoder.Finish();
+        ctx.queue.Submit(1, &commands);
+        waitForGpu(ctx);
+        remaining -= chunk;
     }
+    // The last chunk and the max reduction ride along with the frame's own commands.
+    recordAccumulate(ctx, encoder, remaining);
+    encoder.ClearBuffer(m_max, 0, 16);
+    wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
     pass.SetPipeline(m_reducePipeline);
     pass.SetBindGroup(0, m_reduceBindGroup);
     pass.DispatchWorkgroups(kReduceGroups);

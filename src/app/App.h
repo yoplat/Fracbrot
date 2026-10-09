@@ -5,6 +5,7 @@
 #include "camera/Camera2D.h"
 #include "camera/OrbitCamera.h"
 #include "fractal/Bifurcation.h"
+#include "fractal/Buddhabrot.h"
 #include "fractal/Mandel2D.h"
 #include "fractal/OrbitTracer.h"
 #include "fractal/Palette.h"
@@ -20,7 +21,7 @@
 
 namespace fb {
 
-enum class ViewMode : int { Plane2D = 0, Fractal3D = 1, LogisticMap = 2, Count };
+enum class ViewMode : int { Plane2D = 0, Fractal3D = 1, LogisticMap = 2, Buddhabrot = 3, Count };
 
 struct AppOptions {
     int width = 1280;
@@ -56,7 +57,9 @@ public:
 
 private:
     void handleInput(float dt);
-    void handleInput2D(float dt, double mx, double my, double scroll, bool mouseFree, bool keysFree);
+    void handleInput2D(Camera2D& cam, float dt, double mx, double my, double scroll, bool mouseFree,
+                       bool keysFree);
+    void drawBuddhabrotUi();
     void handleInputFractal3D(float dt, double mx, double my, double scroll, bool mouseFree, bool keysFree);
     void handleInputOrbit(OrbitCamera& cam, float dt, double mx, double my, double scroll, bool mouseFree,
                           bool keysFree);
@@ -78,9 +81,12 @@ private:
     Raymarcher m_raymarcher;
     Bifurcation m_bifurcation;
     OrbitTracer m_orbitTracer;
+    Buddhabrot m_buddha;
 
     ViewMode m_mode = ViewMode::Plane2D;
     Camera2D m_camera;        // 2D view of the complex plane
+    Camera2D m_buddhaCamera;  // Buddhabrot view (rotated view space when upright)
+    BuddhaSettings m_buddhaSettings;
     OrbitCamera m_marchOrbit; // 3D fractal viewpoint
     MarchParams m_march;
     float m_renderScale = 0.75f;

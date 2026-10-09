@@ -36,9 +36,9 @@ struct BuddhaSettings {
     bool nebula = true;                   // false: one channel (R limit) through the palette
     bool rotate = true;                   // real axis vertical: the classic upright Buddha
     float histScale = 0.5f;               // histogram resolution relative to the screen
-    uint32_t samplesPerFrame = 1u << 20;  // random c values drawn per frame
-    float exposure = 1.0f;
-    float gamma = 1.6f;
+    uint32_t samplesPerFrame = 1u << 21;  // random c values drawn per frame
+    float exposure = 3.0f;
+    float gamma = 2.0f;
     bool paused = false;
 };
 
@@ -49,8 +49,9 @@ class Buddhabrot {
 public:
     void init(const Context& ctx, const PaletteTexture& palette);
     void update(const Context& ctx, const Camera2D& view, const BuddhaSettings& settings);
-    // Records the clear (if restarting), accumulation (unless paused) and max reduction.
-    void compute(const wgpu::CommandEncoder& encoder);
+    // Records the clear (if restarting), accumulation (unless paused) and max reduction. Large
+    // sample counts are split into separately submitted chunks (see kChunkSamples).
+    void compute(const Context& ctx, const wgpu::CommandEncoder& encoder);
     void draw(const wgpu::RenderPassEncoder& pass) const;
 
     void reset() { m_resetPending = true; }
@@ -58,6 +59,7 @@ public:
 
 private:
     void resizeHistogram(const Context& ctx, uint32_t width, uint32_t height);
+    void recordAccumulate(const Context& ctx, const wgpu::CommandEncoder& encoder, uint32_t workgroups);
 
     const PaletteTexture* m_palette = nullptr;
     wgpu::ComputePipeline m_accumPipeline;

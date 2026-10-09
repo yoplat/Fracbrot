@@ -21,6 +21,7 @@ add_executable(fracbrot
   src/gfx/Context.cpp
   src/gfx/Readback.cpp
   src/fractal/Bifurcation.cpp
+  src/fractal/Buddhabrot.cpp
   src/fractal/DistanceEstimator.cpp
   src/fractal/Mandel2D.cpp
   src/fractal/OrbitTracer.cpp

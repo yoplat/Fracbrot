@@ -21,7 +21,7 @@ void usage() {
         "  --perturb           force perturbation rendering in 2D (default: below scale 1e-3)\n"
         "  --iter N            max iterations\n"
         "  --palette N         palette preset index\n"
-        "  --mode N            0 = 2D plane, 1 = 3D fractal, 2 = logistic map\n"
+        "  --mode N            0 = 2D plane, 1 = 3D fractal, 2 = logistic map, 3 = buddhabrot\n"
         "  --orbit YAW,PITCH,DIST  3D camera (radians)\n"
         "  --target X,Y,Z      3D camera target\n"
         "  --formula N         3D formula: 0 = quaternion Mandelbrot, 1 = quaternion Julia, 2 = Mandelbulb, 3 = bicomplex,\n                      4 = hypercomplex (video), 5 = quaternion + Syntopia flip\n"

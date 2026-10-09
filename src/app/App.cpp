@@ -17,7 +17,7 @@ namespace {
 // How long the 3D view must be unchanged before rendering at full quality again.
 constexpr double kSettleSeconds = 0.15;
 
-const char* const kModeNames[] = {"2D plane", "3D fractal", "Logistic map"};
+const char* const kModeNames[] = {"2D plane", "3D fractal", "Logistic map", "Buddhabrot"};
 const char* const kFormulaNames[] = {"Quaternion Mandelbrot", "Quaternion Julia", "Mandelbulb",
                                       "Bicomplex Mandelbrot (Tetrabrot)", "Hypercomplex Mandelbrot (video)",
                                       "Quaternion + Syntopia flip"};
@@ -55,6 +55,15 @@ OrbitCamera logisticHome() {
 }
 static_assert(std::size(kModeNames) == size_t(ViewMode::Count));
 
+// Whole-figure framing; in the upright (rotated) view, up = -real, right = +imaginary.
+Camera2D buddhaHome(bool rotate) {
+    Camera2D cam;
+    cam.cx = BigFixed(rotate ? 0.0 : -0.45);
+    cam.cy = BigFixed(rotate ? 0.45 : 0.0);
+    cam.scale = rotate ? 1.55 : 1.35;
+    return cam;
+}
+
 } // namespace
 
 bool App::init(const AppOptions& opts) {
@@ -75,6 +84,7 @@ bool App::init(const AppOptions& opts) {
     m_raymarcher.init(m_ctx, m_palette);
     m_bifurcation.init(m_ctx, m_palette);
     m_orbitTracer.init(m_ctx);
+    m_buddha.init(m_ctx, m_palette);
 
     applyFormulaDefaults(m_march, Formula3D(std::clamp(opts.formula, 0, int(Formula3D::Count) - 1)));
     if (opts.iter3d) m_march.iterations = opts.iter3d;
@@ -113,6 +123,7 @@ void App::applyBenchScene(const BenchScene& scene) {
     m_autoRotate = false;
     m_showOrbit = false;
     m_renderScale = 0.75f;
+    m_buddhaSettings = {};
     applyFormulaDefaults(m_march, Formula3D(scene.formula));
     resetCameras();
     if (scene.view) m_camera = Camera2D::parse(scene.view).value_or(Camera2D{});
@@ -127,6 +138,7 @@ void App::applyBenchScene(const BenchScene& scene) {
 
 void App::resetCameras() {
     m_camera.reset();
+    m_buddhaCamera = buddhaHome(m_buddhaSettings.rotate);
     m_marchOrbit = marchHome(m_march);
     m_logisticOrbit = logisticHome();
 }
@@ -175,6 +187,7 @@ void App::handleInput(float dt) {
         if (keyPressed(GLFW_KEY_1)) m_mode = ViewMode::Plane2D;
         if (keyPressed(GLFW_KEY_2)) m_mode = ViewMode::Fractal3D;
         if (keyPressed(GLFW_KEY_3)) m_mode = ViewMode::LogisticMap;
+        if (keyPressed(GLFW_KEY_4)) m_mode = ViewMode::Buddhabrot;
         if (keyPressed(GLFW_KEY_O)) m_showOrbit = !m_showOrbit;
         if (keyPressed(GLFW_KEY_TAB)) m_mode = ViewMode((int(m_mode) + 1) % int(ViewMode::Count));
         if (keyPressed(GLFW_KEY_P)) m_screenshotRequested = true;
@@ -182,7 +195,9 @@ void App::handleInput(float dt) {
     }
 
     if (m_mode == ViewMode::Plane2D)
-        handleInput2D(dt, mx, my, scroll, mouseFree, keysFree);
+        handleInput2D(m_camera, dt, mx, my, scroll, mouseFree, keysFree);
+    else if (m_mode == ViewMode::Buddhabrot)
+        handleInput2D(m_buddhaCamera, dt, mx, my, scroll, mouseFree, keysFree);
     else
         if (m_mode == ViewMode::Fractal3D)
             handleInputFractal3D(dt, mx, my, scroll, mouseFree, keysFree);
@@ -193,13 +208,14 @@ void App::handleInput(float dt) {
     m_lastCursor[1] = my;
 }
 
-void App::handleInput2D(float dt, double mx, double my, double scroll, bool mouseFree, bool keysFree) {
+void App::handleInput2D(Camera2D& cam, float dt, double mx, double my, double scroll, bool mouseFree,
+                        bool keysFree) {
     const double w = m_ctx.width, h = m_ctx.height;
 
     if (mouseFree) {
-        if (scroll != 0.0) m_camera.zoomAt(mx, my, w, h, std::pow(0.9, scroll));
+        if (scroll != 0.0) cam.zoomAt(mx, my, w, h, std::pow(0.9, scroll));
         const bool down = m_window.mouseDown(GLFW_MOUSE_BUTTON_LEFT);
-        if (down && m_dragging) m_camera.pan(mx - m_lastCursor[0], my - m_lastCursor[1], h);
+        if (down && m_dragging) cam.pan(mx - m_lastCursor[0], my - m_lastCursor[1], h);
         m_dragging = down;
     } else {
         m_dragging = false;
@@ -207,14 +223,14 @@ void App::handleInput2D(float dt, double mx, double my, double scroll, bool mous
 
     if (keysFree) {
         const double panPx = 600.0 * dt;
-        if (m_window.keyDown(GLFW_KEY_LEFT) || m_window.keyDown(GLFW_KEY_A)) m_camera.pan(panPx, 0, h);
-        if (m_window.keyDown(GLFW_KEY_RIGHT) || m_window.keyDown(GLFW_KEY_D)) m_camera.pan(-panPx, 0, h);
-        if (m_window.keyDown(GLFW_KEY_UP) || m_window.keyDown(GLFW_KEY_W)) m_camera.pan(0, panPx, h);
-        if (m_window.keyDown(GLFW_KEY_DOWN) || m_window.keyDown(GLFW_KEY_S)) m_camera.pan(0, -panPx, h);
+        if (m_window.keyDown(GLFW_KEY_LEFT) || m_window.keyDown(GLFW_KEY_A)) cam.pan(panPx, 0, h);
+        if (m_window.keyDown(GLFW_KEY_RIGHT) || m_window.keyDown(GLFW_KEY_D)) cam.pan(-panPx, 0, h);
+        if (m_window.keyDown(GLFW_KEY_UP) || m_window.keyDown(GLFW_KEY_W)) cam.pan(0, panPx, h);
+        if (m_window.keyDown(GLFW_KEY_DOWN) || m_window.keyDown(GLFW_KEY_S)) cam.pan(0, -panPx, h);
         if (m_window.keyDown(GLFW_KEY_Z) || m_window.keyDown(GLFW_KEY_E) || m_window.keyDown(GLFW_KEY_EQUAL))
-            m_camera.zoomAt(w / 2, h / 2, w, h, std::pow(0.25, dt));
+            cam.zoomAt(w / 2, h / 2, w, h, std::pow(0.25, dt));
         if (m_window.keyDown(GLFW_KEY_X) || m_window.keyDown(GLFW_KEY_Q) || m_window.keyDown(GLFW_KEY_MINUS))
-            m_camera.zoomAt(w / 2, h / 2, w, h, std::pow(4.0, dt));
+            cam.zoomAt(w / 2, h / 2, w, h, std::pow(4.0, dt));
     }
 }
 
@@ -411,6 +427,8 @@ void App::drawUi() {
         ImGui::Checkbox("auto-rotate", &m_autoRotate);
     }
 
+    if (m_mode == ViewMode::Buddhabrot) drawBuddhabrotUi();
+
     ImGui::SeparatorText("color");
     const auto presets = palettePresets();
     if (ImGui::BeginCombo("palette", presets[size_t(m_paletteIndex)].name)) {
@@ -432,14 +450,44 @@ void App::drawUi() {
     if (!m_lastScreenshot.empty()) ImGui::TextDisabled("saved %s", m_lastScreenshot.c_str());
 
     ImGui::Separator();
-    if (m_mode == ViewMode::Plane2D)
+    if (m_mode == ViewMode::Plane2D || m_mode == ViewMode::Buddhabrot)
         ImGui::TextDisabled("drag: pan  scroll / Z X: zoom in/out\nWASD/arrows: pan");
     else
         ImGui::TextDisabled(m_mode == ViewMode::Fractal3D
                                 ? "drag: orbit grabbed point  right/shift-drag: pan\nscroll: zoom to cursor  Z X: zoom in/out\nWASD: fly  Q/E: down/up"
                                 : "drag: orbit  scroll / Z X: zoom in/out\nWASD: move target  Q/E: down/up");
-    ImGui::TextDisabled("1-3 / Tab: mode  P: screenshot");
+    ImGui::TextDisabled("1-4 / Tab: mode  P: screenshot");
     ImGui::End();
+}
+
+void App::drawBuddhabrotUi() {
+    BuddhaSettings& s = m_buddhaSettings;
+    ImGui::SeparatorText("buddhabrot");
+    ImGui::Text("%.1fM orbits sampled", double(m_buddha.samples()) * 1e-6);
+    ImGui::Checkbox("nebulabrot (RGB limits)", &s.nebula);
+    auto limit = [](const char* label, uint32_t& v) {
+        int i = int(v);
+        if (ImGui::SliderInt(label, &i, 10, 50000, "%d", ImGuiSliderFlags_Logarithmic)) v = uint32_t(i);
+    };
+    limit(s.nebula ? "red limit" : "iterations", s.limits[0]);
+    if (s.nebula) {
+        limit("green limit", s.limits[1]);
+        limit("blue limit", s.limits[2]);
+    }
+    int minIter = int(s.minIter);
+    if (ImGui::SliderInt("min iterations", &minIter, 0, 1000, "%d", ImGuiSliderFlags_Logarithmic))
+        s.minIter = uint32_t(minIter);
+    int samples = int(s.samplesPerFrame >> 10);
+    if (ImGui::SliderInt("samples/frame (K)", &samples, 64, 8192, "%d", ImGuiSliderFlags_Logarithmic))
+        s.samplesPerFrame = uint32_t(samples) << 10;
+    ImGui::SliderFloat("resolution", &s.histScale, 0.25f, 1.0f, "%.2f");
+    ImGui::SliderFloat("exposure", &s.exposure, 0.5f, 64.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
+    ImGui::SliderFloat("gamma", &s.gamma, 0.5f, 4.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+    if (ImGui::Checkbox("upright (rotate 90 deg)", &s.rotate)) m_buddhaCamera = buddhaHome(s.rotate);
+    ImGui::Checkbox("pause", &s.paused);
+    ImGui::SameLine();
+    if (ImGui::Button("restart")) m_buddha.reset();
+    if (!s.nebula) ImGui::TextDisabled("single channel uses the palette below");
 }
 
 void App::setPalette(int index) {
@@ -537,6 +585,13 @@ bool App::frame() {
         m_mandel.draw(pass);
         if (m_showOrbit) m_orbitTracer.draw(pass);
         pass.End();
+    } else if (m_mode == ViewMode::Buddhabrot) {
+        m_buddha.update(m_ctx, m_buddhaCamera, m_buddhaSettings);
+        m_buddha.compute(m_ctx, encoder);
+        color.clearValue = {0.0, 0.0, 0.0, 1.0};
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&sceneDesc);
+        m_buddha.draw(pass);
+        pass.End();
     } else if (m_mode == ViewMode::LogisticMap) {
         if (m_autoRotate) m_logisticOrbit.yaw += 0.15f * dt;
         m_bif.highlightC = m_highlightR ? float(logisticToC(m_logisticR)) : 1e9f;
@@ -601,6 +656,7 @@ bool App::frame() {
 
 void App::shutdown() {
     m_gui.shutdown();
+    m_buddha = {};
     m_orbitTracer = {};
     m_bifurcation = {};
     m_raymarcher = {};

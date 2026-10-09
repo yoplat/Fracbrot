@@ -21,6 +21,7 @@ const std::vector<BenchScene>& benchScenes() {
         {.name = "3d_bicomplex", .mode = 1, .formula = 3},
         {.name = "3d_hyper", .mode = 1, .formula = 4},
         {.name = "logistic", .mode = 2},
+        {.name = "buddhabrot", .mode = 3},
     };
     return scenes;
 }
