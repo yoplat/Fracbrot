@@ -7,126 +7,133 @@ namespace fb {
 
 namespace {
 
+// Everything here runs in double precision: navigation must keep working at zoom depths
+// where float positions have run out of resolution.
+using dvec2 = glm::dvec2;
+using dvec3 = glm::dvec3;
+using dvec4 = glm::dvec4;
+
 // Quaternions as (real, i, j, k) in (x, y, z, w), matching the shader.
-glm::vec4 qsq(glm::vec4 q) {
-    return {q.x * q.x - (q.y * q.y + q.z * q.z + q.w * q.w), 2.0f * q.x * q.y, 2.0f * q.x * q.z, 2.0f * q.x * q.w};
+dvec4 qsq(dvec4 q) {
+    return {q.x * q.x - (q.y * q.y + q.z * q.z + q.w * q.w), 2.0 * q.x * q.y, 2.0 * q.x * q.z, 2.0 * q.x * q.w};
 }
 
-glm::vec4 toSlice(const MarchParams& m, glm::vec3 pos) {
-    const float ct = std::cos(m.tilt), st = std::sin(m.tilt);
-    return {pos.x * ct - m.sliceW * st, pos.y, pos.z, pos.x * st + m.sliceW * ct};
-}
-
-glm::vec4 rotateIter(const MarchParams& m, glm::vec4 z) {
-    const glm::vec3 cs = glm::cos(glm::vec3(m.rotation));
-    const glm::vec3 sn = glm::sin(glm::vec3(m.rotation));
+dvec4 rotateIter(const MarchParams& m, dvec4 z) {
+    const dvec3 cs = glm::cos(dvec3(m.rotation));
+    const dvec3 sn = glm::sin(dvec3(m.rotation));
     z = {z.x, z.y * cs.x - z.w * sn.x, z.z, z.y * sn.x + z.w * cs.x};
     z = {z.x, z.y, z.z * cs.y - z.w * sn.y, z.z * sn.y + z.w * cs.y};
     z = {z.y * sn.z + z.x * cs.z, z.y * cs.z - z.x * sn.z, z.z, z.w};
     return z;
 }
 
-float deQuat(const MarchParams& m, glm::vec3 pos, bool julia) {
-    const glm::vec4 p = toSlice(m, pos);
-    glm::vec4 z{0.0f}, c = p;
-    float dr = 0.0f;
-    if (julia) {
-        z = p;
-        c = m.juliaC;
-        dr = 1.0f;
-    }
-    const float dc = julia ? 0.0f : 1.0f;
-    float r2 = glm::dot(z, z);
-    for (uint32_t i = 0; i < m.iterations; ++i) {
-        if (r2 > 256.0f) break;
-        dr = 2.0f * std::sqrt(r2) * dr + dc;
-        z = rotateIter(m, qsq(z) + c);
-        r2 = glm::dot(z, z);
-    }
-    const float r = std::sqrt(r2);
-    return 0.5f * r * std::log(std::max(r, 1e-8f)) / std::max(dr, 1e-8f);
-}
-
-float deQuatFlip(const MarchParams& m, glm::vec3 pos) {
-    const glm::vec4 c = toSlice(m, pos);
-    glm::vec4 z{c.x, -c.z, -c.y, c.w};
-    float dr = 1.0f;
-    float r2 = glm::dot(z, z);
-    for (uint32_t i = 0; i < m.iterations; ++i) {
-        if (r2 > 256.0f) break;
-        dr = 2.0f * std::sqrt(r2) * dr + 1.0f;
-        z = rotateIter(m, qsq(z) + c);
-        r2 = glm::dot(z, z);
-    }
-    const float r = std::sqrt(r2);
-    return 0.5f * r * std::log(std::max(r, 1e-8f)) / std::max(dr, 1e-8f);
-}
-
-glm::vec4 hmul(glm::vec4 a, glm::vec4 b) {
+dvec4 hmul(dvec4 a, dvec4 b) {
     return {a.x * b.x - a.y * b.y - a.z * b.z - a.w * b.w, a.x * b.y + a.y * b.x + a.z * b.w + a.w * b.z,
             a.x * b.z + a.z * b.x - a.y * b.w - a.w * b.y, a.x * b.w + a.w * b.x + a.y * b.z + a.z * b.y};
 }
 
-float deHyper(const MarchParams& m, glm::vec3 pos) {
-    constexpr float kBailout2 = 1e4f;
-    const glm::vec4 c = toSlice(m, pos);
-    const glm::vec4 e0{std::cos(m.tilt), 0.0f, 0.0f, std::sin(m.tilt)};
-    glm::vec4 z{0.0f}, d0{0.0f}, d1{0.0f}, d2{0.0f};
-    float r2 = 0.0f;
+double deQuat(const MarchParams& m, dvec3 pos, bool julia) {
+    const dvec4 p = toSlice(m, pos);
+    dvec4 z{0.0}, c = p;
+    double dr = 0.0;
+    if (julia) {
+        z = p;
+        c = dvec4(m.juliaC);
+        dr = 1.0;
+    }
+    const double dc = julia ? 0.0 : 1.0;
+    double r2 = glm::dot(z, z);
     for (uint32_t i = 0; i < m.iterations; ++i) {
-        d0 = rotateIter(m, 2.0f * hmul(z, d0) + e0);
-        d1 = rotateIter(m, 2.0f * hmul(z, d1) + glm::vec4(0.0f, 1.0f, 0.0f, 0.0f));
-        d2 = rotateIter(m, 2.0f * hmul(z, d2) + glm::vec4(0.0f, 0.0f, 1.0f, 0.0f));
+        if (r2 > 256.0) break;
+        dr = 2.0 * std::sqrt(r2) * dr + dc;
+        z = rotateIter(m, qsq(z) + c);
+        r2 = glm::dot(z, z);
+    }
+    const double r = std::sqrt(r2);
+    return 0.5 * r * std::log(std::max(r, 1e-300)) / std::max(dr, 1e-300);
+}
+
+double deQuatFlip(const MarchParams& m, dvec3 pos) {
+    const dvec4 c = toSlice(m, pos);
+    dvec4 z{c.x, -c.z, -c.y, c.w};
+    double dr = 1.0;
+    double r2 = glm::dot(z, z);
+    for (uint32_t i = 0; i < m.iterations; ++i) {
+        if (r2 > 256.0) break;
+        dr = 2.0 * std::sqrt(r2) * dr + 1.0;
+        z = rotateIter(m, qsq(z) + c);
+        r2 = glm::dot(z, z);
+    }
+    const double r = std::sqrt(r2);
+    return 0.5 * r * std::log(std::max(r, 1e-300)) / std::max(dr, 1e-300);
+}
+
+double deHyper(const MarchParams& m, dvec3 pos) {
+    constexpr double kBailout2 = 1e4;
+    const dvec4 c = toSlice(m, pos);
+    const dvec4 e0{std::cos(double(m.tilt)), 0.0, 0.0, std::sin(double(m.tilt))};
+    dvec4 z{0.0}, d0{0.0}, d1{0.0}, d2{0.0};
+    double r2 = 0.0;
+    for (uint32_t i = 0; i < m.iterations; ++i) {
+        d0 = rotateIter(m, 2.0 * hmul(z, d0) + e0);
+        d1 = rotateIter(m, 2.0 * hmul(z, d1) + dvec4(0.0, 1.0, 0.0, 0.0));
+        d2 = rotateIter(m, 2.0 * hmul(z, d2) + dvec4(0.0, 0.0, 1.0, 0.0));
         z = rotateIter(m, hmul(z, z) + c);
         r2 = glm::dot(z, z);
         if (r2 > kBailout2) break;
     }
-    if (r2 <= kBailout2) return 0.0f;
-    const glm::vec3 g{glm::dot(d0, z), glm::dot(d1, z), glm::dot(d2, z)};
-    return 0.25f * r2 * std::log(r2) / std::max(glm::length(g), 1e-20f);
+    if (r2 <= kBailout2) return 0.0;
+    const dvec3 g{glm::dot(d0, z), glm::dot(d1, z), glm::dot(d2, z)};
+    return 0.25 * r2 * std::log(r2) / std::max(glm::length(g), 1e-300);
 }
 
-float deBulb(const MarchParams& m, glm::vec3 worldPos) {
-    const glm::vec3 c{worldPos.x, worldPos.z, worldPos.y};
-    glm::vec3 z = c;
-    float dr = 1.0f;
-    float r = glm::length(z);
+double deBulb(const MarchParams& m, dvec3 worldPos) {
+    const double power = m.power;
+    const dvec3 c{worldPos.x, worldPos.z, worldPos.y};
+    dvec3 z = c;
+    double dr = 1.0;
+    double r = glm::length(z);
     for (uint32_t i = 0; i < m.iterations; ++i) {
-        if (r > 2.0f) break;
-        const float theta = std::acos(std::clamp(z.z / std::max(r, 1e-8f), -1.0f, 1.0f)) * m.power;
-        const float phi = std::atan2(z.y, z.x) * m.power;
-        const float rp = std::pow(r, m.power - 1.0f);
-        dr = rp * m.power * dr + 1.0f;
-        z = rp * r * glm::vec3(std::sin(theta) * std::cos(phi), std::sin(theta) * std::sin(phi), std::cos(theta)) + c;
+        if (r > 2.0) break;
+        const double theta = std::acos(std::clamp(z.z / std::max(r, 1e-300), -1.0, 1.0)) * power;
+        const double phi = std::atan2(z.y, z.x) * power;
+        const double rp = std::pow(r, power - 1.0);
+        dr = rp * power * dr + 1.0;
+        z = rp * r * dvec3(std::sin(theta) * std::cos(phi), std::sin(theta) * std::sin(phi), std::cos(theta)) + c;
         r = glm::length(z);
     }
-    return 0.5f * std::log(std::max(r, 1e-8f)) * r / dr;
+    return 0.5 * std::log(std::max(r, 1e-300)) * r / dr;
 }
 
-float deMandel2(const MarchParams& m, glm::vec2 c) {
-    glm::vec2 z{0.0f}, dz{0.0f};
-    float r2 = 0.0f;
+double deMandel2(const MarchParams& m, dvec2 c) {
+    dvec2 z{0.0}, dz{0.0};
+    double r2 = 0.0;
     for (uint32_t i = 0; i < m.iterations; ++i) {
-        dz = 2.0f * glm::vec2(z.x * dz.x - z.y * dz.y, z.x * dz.y + z.y * dz.x) + glm::vec2(1.0f, 0.0f);
-        z = glm::vec2(z.x * z.x - z.y * z.y, 2.0f * z.x * z.y) + c;
+        dz = 2.0 * dvec2(z.x * dz.x - z.y * dz.y, z.x * dz.y + z.y * dz.x) + dvec2(1.0, 0.0);
+        z = dvec2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + c;
         r2 = glm::dot(z, z);
-        if (r2 > 1e4f) break;
+        if (r2 > 1e4) break;
     }
-    if (r2 <= 1e4f) return 0.0f;
-    const float r = std::sqrt(r2);
-    return 0.5f * r * std::log(r) / glm::length(dz);
+    if (r2 <= 1e4) return 0.0;
+    const double r = std::sqrt(r2);
+    return 0.5 * r * std::log(r) / glm::length(dz);
 }
 
-float deBicomplex(const MarchParams& m, glm::vec3 pos) {
-    const glm::vec4 q = toSlice(m, pos);
-    const float d1 = deMandel2(m, {q.x - q.w, q.y + q.z});
-    const float d2 = deMandel2(m, {q.x + q.w, q.y - q.z});
-    return std::max(d1, d2) * 0.70710678f;
+double deBicomplex(const MarchParams& m, dvec3 pos) {
+    const dvec4 q = toSlice(m, pos);
+    const double d1 = deMandel2(m, {q.x - q.w, q.y + q.z});
+    const double d2 = deMandel2(m, {q.x + q.w, q.y - q.z});
+    return std::max(d1, d2) * 0.70710678118654752;
 }
 
 } // namespace
 
-float distanceEstimate(const MarchParams& m, glm::vec3 pos) {
+glm::dvec4 toSlice(const MarchParams& m, glm::dvec3 pos) {
+    const double ct = std::cos(double(m.tilt)), st = std::sin(double(m.tilt));
+    return {pos.x * ct - m.sliceW * st, pos.y, pos.z, pos.x * st + m.sliceW * ct};
+}
+
+double distanceEstimate(const MarchParams& m, glm::dvec3 pos) {
     switch (m.formula) {
     case Formula3D::QuatJulia: return deQuat(m, pos, true);
     case Formula3D::Mandelbulb: return deBulb(m, pos);
@@ -137,33 +144,33 @@ float distanceEstimate(const MarchParams& m, glm::vec3 pos) {
     }
 }
 
-std::optional<float> raycast(const MarchParams& m, glm::vec3 origin, glm::vec3 dir, float pixelAngle) {
+std::optional<double> raycast(const MarchParams& m, glm::dvec3 origin, glm::dvec3 dir, double pixelAngle) {
     // Clip to the bounding sphere, as the shader does.
-    const glm::vec3 oc = origin - m.boundCenter;
-    const float b = glm::dot(oc, dir);
-    const float h = b * b - (glm::dot(oc, oc) - m.boundRadius * m.boundRadius);
-    if (h < 0.0f) return std::nullopt;
-    const float s = std::sqrt(h);
-    const float tFar = -b + s;
-    if (tFar < 0.0f) return std::nullopt;
+    const dvec3 oc = origin - dvec3(m.boundCenter);
+    const double b = glm::dot(oc, dir);
+    const double h = b * b - (glm::dot(oc, oc) - double(m.boundRadius) * m.boundRadius);
+    if (h < 0.0) return std::nullopt;
+    const double s = std::sqrt(h);
+    const double tFar = -b + s;
+    if (tFar < 0.0) return std::nullopt;
 
-    float t = std::max(-b - s, 0.0f);
+    double t = std::max(-b - s, 0.0);
     for (uint32_t i = 0; i < 4 * m.maxSteps; ++i) {
-        const float d = distanceEstimate(m, origin + dir * t);
-        if (d < std::max(t * pixelAngle * m.detail, 1e-6f)) return t;
+        const double d = distanceEstimate(m, origin + dir * t);
+        if (d < std::max(t * pixelAngle * m.detail, 1e-15)) return t;
         t += d;
         if (t > tFar) break;
     }
     return std::nullopt;
 }
 
-void zoomAlongRay(OrbitCamera& cam, const MarchParams& m, glm::vec3 dir, float pixelAngle, float factor) {
-    const float ahead = raycast(m, cam.position(), dir, pixelAngle).value_or(cam.distance);
-    cam.translate(dir * ((1.0f - factor) * ahead));
+void zoomAlongRay(OrbitCamera& cam, const MarchParams& m, glm::dvec3 dir, double pixelAngle, double factor) {
+    const double ahead = raycast(m, cam.positionD(), dir, pixelAngle).value_or(cam.distance);
+    cam.translate(dir * ((1.0 - factor) * ahead));
 }
 
-float clearance(const OrbitCamera& cam, const MarchParams& m) {
-    return std::max(distanceEstimate(m, cam.position()), 1e-6f);
+double clearance(const OrbitCamera& cam, const MarchParams& m) {
+    return std::max(distanceEstimate(m, cam.positionD()), 1e-15);
 }
 
 } // namespace fb

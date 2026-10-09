@@ -67,10 +67,10 @@ int main() {
         // Zoom toward an off-center cursor: the surface point under it stays put.
         const glm::vec2 cursor{0.3f, -0.2f};
         for (int i = 0; i < 20; ++i) {
-            const glm::vec3 dir = cam.rayDir(cursor, aspect);
-            const auto hit = raycast(m, cam.position(), dir, pa);
+            const glm::dvec3 dir(cam.rayDir(cursor, aspect));
+            const auto hit = raycast(m, cam.positionD(), dir, pa);
             if (!hit) break;
-            const glm::vec3 p = cam.position() + dir * *hit;
+            const glm::vec3 p(cam.positionD() + dir * *hit);
             zoomAlongRay(cam, m, dir, pa, 0.85f);
             if (!near2(project(p), cursor, 1e-3f)) {
                 check(false, "zoom keeps the point under the cursor");
@@ -79,10 +79,11 @@ int main() {
         }
 
         // Orbit around a grabbed point: it keeps its screen position.
-        const glm::vec3 dir = cam.rayDir(cursor, aspect);
-        const glm::vec3 grab = cam.position() + dir * raycast(m, cam.position(), dir, pa).value_or(1.0f);
+        const glm::dvec3 dir(cam.rayDir(cursor, aspect));
+        const glm::dvec3 grabD = cam.positionD() + dir * raycast(m, cam.positionD(), dir, pa).value_or(1.0);
+        const glm::vec3 grab(grabD);
         const glm::vec2 before = project(grab);
-        cam.orbitAround(grab, 0.4f, -0.25f);
+        cam.orbitAround(grabD, 0.4f, -0.25f);
         check(near2(project(grab), before, 1e-3f), "orbit keeps the grabbed point on screen");
 
         // Pan by (dx, dy) pixels: the grabbed point follows the cursor exactly.
@@ -90,7 +91,7 @@ int main() {
         const float dx = 40.0f, dy = -25.0f;
         const float k = 2.0f * std::tan(0.5f * cam.fovY) * depth / H;
         const glm::vec2 start = project(grab);
-        cam.translate(-(cam.right() * dx - cam.up() * dy) * k);
+        cam.translate(glm::dvec3(-(cam.right() * dx - cam.up() * dy) * k));
         const glm::vec2 expected = start + glm::vec2(2.0f * dx / (H * aspect), -2.0f * dy / H);
         check(near2(project(grab), expected, 1e-3f), "pan moves the grabbed point with the cursor");
     }
@@ -106,12 +107,12 @@ int main() {
         cam.pitch = 0.08f;
         cam.distance = 3.6f;
         const float pa = 2.0f * std::tan(0.5f * cam.fovY) / 800.0f;
-        auto ahead = [&] { return raycast(m, cam.position(), cam.forward(), pa).value_or(1e9f); };
+        auto ahead = [&] { return raycast(m, cam.positionD(), glm::dvec3(cam.forward()), pa).value_or(1e9); };
         const float aheadStart = ahead();
         bool alwaysOutside = true;
         for (int i = 0; i < 120; ++i) {
-            zoomAlongRay(cam, m, cam.forward(), pa, 0.85f);
-            if (distanceEstimate(m, cam.position()) <= 0.0f) alwaysOutside = false;
+            zoomAlongRay(cam, m, glm::dvec3(cam.forward()), pa, 0.85);
+            if (distanceEstimate(m, cam.positionD()) <= 0.0) alwaysOutside = false;
         }
         check(alwaysOutside, "zooming never enters the set");
         check(ahead() < aheadStart * 0.01f, "zooming gets close to the surface ahead");
