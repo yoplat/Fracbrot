@@ -19,7 +19,8 @@ constexpr double kSettleSeconds = 0.15;
 
 const char* const kModeNames[] = {"2D plane", "3D fractal", "Logistic map"};
 const char* const kFormulaNames[] = {"Quaternion Mandelbrot", "Quaternion Julia", "Mandelbulb",
-                                      "Bicomplex Mandelbrot (Tetrabrot)"};
+                                      "Bicomplex Mandelbrot (Tetrabrot)", "Hypercomplex Mandelbrot (video)",
+                                      "Quaternion + Syntopia flip"};
 static_assert(std::size(kFormulaNames) == size_t(Formula3D::Count));
 
 OrbitCamera marchHome(const MarchParams& march) {
@@ -28,7 +29,13 @@ OrbitCamera marchHome(const MarchParams& march) {
     cam.yaw = 0.45f;
     cam.pitch = 0.3f;
     cam.distance = 3.2f;
-    if (march.formula == Formula3D::QuatMandelbrot) {
+    if (march.formula == Formula3D::Hypercomplex || march.formula == Formula3D::QuatFlip) {
+        // Side-on along the needle, like the video.
+        cam.target = {-0.9f, 0.0f, 0.0f};
+        cam.yaw = 0.15f;
+        cam.pitch = 0.06f;
+        cam.distance = 2.6f;
+    } else if (march.formula == Formula3D::QuatMandelbrot) {
         // Side-on to the real axis, like Ice Fractal's default view.
         cam.target = {-0.7f, 0.0f, 0.0f};
         cam.yaw = 0.12f;
@@ -141,6 +148,8 @@ void App::animate(double time) {
         m_march.power = 8.0f + 4.0f * std::sin(t * 0.2f);
         break;
     case Formula3D::Bicomplex:
+    case Formula3D::Hypercomplex:
+    case Formula3D::QuatFlip:
         m_march.sliceW = 0.3f * std::sin(t * 0.25f);
         break;
     case Formula3D::Count:
@@ -492,7 +501,8 @@ bool App::frame() {
         // Fast controls: render at half resolution while the view is changing, then once at
         // full quality when it settles. Unchanged frames reuse the last image.
         if (m_raymarcher.changed(m_params, m_scene, m_march)) m_lastMarchChange = now;
-        const bool moving = m_fastControls && !m_bench && now - m_lastMarchChange < kSettleSeconds;
+        const bool automated = m_bench || m_opts.maxFrames >= 0; // scripted runs: always full quality
+        const bool moving = m_fastControls && !automated && now - m_lastMarchChange < kSettleSeconds;
         const float scale = moving ? 0.5f * m_renderScale : m_renderScale;
         if (m_bench) m_raymarcher.invalidate();
         m_raymarcher.update(m_ctx, m_params, m_scene, m_march, m_marchOrbit.fovY, scale);

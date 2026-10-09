@@ -5,6 +5,9 @@
 //   2: Mandelbulb (power N), formula axis z mapped to world +y
 //   3: bicomplex Mandelbrot ("Tetrabrot"): q <- q² + c with commuting units; it splits
 //      into two complex Mandelbrot iterations, so the set is M x M seen through a slice
+//   4: hypercomplex Mandelbrot: q <- q² + c with i² = j² = k² = -1, ij = ji = k,
+//      ik = ki = -j, jk = kj = i (the squaring behind Yann Le Bihan's "quaternion" video)
+//   5: quaternion Mandelbrot with Syntopia's flip: z0 = c with z.yz = -z.zy, then q <- q² + c
 // For the quaternion formulas world x is the real axis.
 
 struct Scene {
@@ -38,9 +41,12 @@ const FORMULA_QUAT_MANDEL: u32 = 0u;
 const FORMULA_QUAT_JULIA: u32 = 1u;
 const FORMULA_BULB: u32 = 2u;
 const FORMULA_BICOMPLEX: u32 = 3u;
+const FORMULA_HYPERCOMPLEX: u32 = 4u;
+const FORMULA_QUAT_FLIP: u32 = 5u;
 const FLAG_SHADOWS: u32 = 1u;
 const FLAG_AO: u32 = 2u;
 const FLAG_REFLECT: u32 = 4u;
+const HYPER_BAILOUT2: f32 = 1e4;  // large bailout keeps the gradient estimate accurate
 const COARSE_DIVISOR: u32 = 4u; // coarse march / shadow iterations = iterations / this
 const BASE_COLOR = vec3f(0.85, 0.82, 0.78);
 
@@ -114,6 +120,66 @@ fn deQuat(pos: vec3f, julia: bool, iters: u32) -> vec2f {
     return vec2f(0.5 * r * log(max(r, 1e-8)) / max(dr, 1e-8), trap);
 }
 
+// Quaternion Mandelbrot whose first iterate has its i and j parts swapped and negated
+// (credited to Syntopia). Still a true quaternion iteration, so the scalar bound holds; the
+// flip is an isometry, so the derivative starts at 1.
+fn deQuatFlip(pos: vec3f, iters: u32) -> vec2f {
+    let c = toSlice(pos);
+    var z = vec4f(c.x, -c.z, -c.y, c.w);
+    var dr = 1.0;
+    var r2 = dot(z, z);
+    var trap = r2;
+    for (var i = 0u; i < iters; i++) {
+        if (r2 > 256.0) { break; }
+        dr = 2.0 * sqrt(r2) * dr + 1.0;
+        z = rotateIter(qsq(z) + c);
+        r2 = dot(z, z);
+        trap = min(trap, r2);
+    }
+    let r = sqrt(r2);
+    return vec2f(0.5 * r * log(max(r, 1e-8)) / max(dr, 1e-8), trap);
+}
+
+// Product in the commutative hypercomplex system i² = j² = k² = -1, ij = ji = k,
+// ik = ki = -j, jk = kj = i. hmul(z, z) is the squaring formula
+// (x² - y² - z² - w², 2(xy + zw), 2(xz - yw), 2(xw + yz)).
+fn hmul(a: vec4f, b: vec4f) -> vec4f {
+    return vec4f(a.x * b.x - a.y * b.y - a.z * b.z - a.w * b.w,
+                 a.x * b.y + a.y * b.x + a.z * b.w + a.w * b.z,
+                 a.x * b.z + a.z * b.x - a.y * b.w - a.w * b.y,
+                 a.x * b.w + a.w * b.x + a.y * b.z + a.z * b.y);
+}
+
+// This algebra isn't normed (|ab| != |a||b|), so the usual scalar derivative isn't a valid
+// bound. Track the Jacobian of z with respect to the three slice directions instead and
+// use the potential-gradient estimate 0.5 |z|² ln|z| / |J^T z|, which reduces to the
+// familiar 0.5 |z| ln|z| / |dz| for complex numbers.
+fn deHyper(pos: vec3f, iters: u32) -> vec2f {
+    let c = toSlice(pos);
+    let ct = cos(m.tilt);
+    let st = sin(m.tilt);
+    let e0 = vec4f(ct, 0.0, 0.0, st); // d c / d pos.x (see toSlice)
+    var z = vec4f(0.0);
+    var d0 = vec4f(0.0);
+    var d1 = vec4f(0.0);
+    var d2 = vec4f(0.0);
+    var r2 = 0.0;
+    var trap = 1e10;
+    for (var i = 0u; i < iters; i++) {
+        // The per-iteration rotation is linear, so derivatives rotate with z.
+        d0 = rotateIter(2.0 * hmul(z, d0) + e0);
+        d1 = rotateIter(2.0 * hmul(z, d1) + vec4f(0.0, 1.0, 0.0, 0.0));
+        d2 = rotateIter(2.0 * hmul(z, d2) + vec4f(0.0, 0.0, 1.0, 0.0));
+        z = rotateIter(hmul(z, z) + c);
+        r2 = dot(z, z);
+        trap = min(trap, r2);
+        if (r2 > HYPER_BAILOUT2) { break; }
+    }
+    if (r2 <= HYPER_BAILOUT2) { return vec2f(0.0, trap); } // never escaped: inside
+    let g = vec3f(dot(d0, z), dot(d1, z), dot(d2, z));
+    return vec2f(0.25 * r2 * log(r2) / max(length(g), 1e-20), trap);
+}
+
 fn deBulb(worldPos: vec3f, iters: u32) -> vec2f {
     let c = worldPos.xzy;
     var z = c;
@@ -169,6 +235,8 @@ fn deBicomplex(pos: vec3f, iters: u32) -> vec2f {
 fn deN(pos: vec3f, iters: u32) -> vec2f {
     switch (m.formula) {
         case FORMULA_BICOMPLEX: { return deBicomplex(pos, iters); }
+        case FORMULA_HYPERCOMPLEX: { return deHyper(pos, iters); }
+        case FORMULA_QUAT_FLIP: { return deQuatFlip(pos, iters); }
         case FORMULA_QUAT_JULIA: { return deQuat(pos, true, iters); }
         case FORMULA_BULB: { return deBulb(pos, iters); }
         default: { return deQuat(pos, false, iters); }

@@ -47,6 +47,45 @@ float deQuat(const MarchParams& m, glm::vec3 pos, bool julia) {
     return 0.5f * r * std::log(std::max(r, 1e-8f)) / std::max(dr, 1e-8f);
 }
 
+float deQuatFlip(const MarchParams& m, glm::vec3 pos) {
+    const glm::vec4 c = toSlice(m, pos);
+    glm::vec4 z{c.x, -c.z, -c.y, c.w};
+    float dr = 1.0f;
+    float r2 = glm::dot(z, z);
+    for (uint32_t i = 0; i < m.iterations; ++i) {
+        if (r2 > 256.0f) break;
+        dr = 2.0f * std::sqrt(r2) * dr + 1.0f;
+        z = rotateIter(m, qsq(z) + c);
+        r2 = glm::dot(z, z);
+    }
+    const float r = std::sqrt(r2);
+    return 0.5f * r * std::log(std::max(r, 1e-8f)) / std::max(dr, 1e-8f);
+}
+
+glm::vec4 hmul(glm::vec4 a, glm::vec4 b) {
+    return {a.x * b.x - a.y * b.y - a.z * b.z - a.w * b.w, a.x * b.y + a.y * b.x + a.z * b.w + a.w * b.z,
+            a.x * b.z + a.z * b.x - a.y * b.w - a.w * b.y, a.x * b.w + a.w * b.x + a.y * b.z + a.z * b.y};
+}
+
+float deHyper(const MarchParams& m, glm::vec3 pos) {
+    constexpr float kBailout2 = 1e4f;
+    const glm::vec4 c = toSlice(m, pos);
+    const glm::vec4 e0{std::cos(m.tilt), 0.0f, 0.0f, std::sin(m.tilt)};
+    glm::vec4 z{0.0f}, d0{0.0f}, d1{0.0f}, d2{0.0f};
+    float r2 = 0.0f;
+    for (uint32_t i = 0; i < m.iterations; ++i) {
+        d0 = rotateIter(m, 2.0f * hmul(z, d0) + e0);
+        d1 = rotateIter(m, 2.0f * hmul(z, d1) + glm::vec4(0.0f, 1.0f, 0.0f, 0.0f));
+        d2 = rotateIter(m, 2.0f * hmul(z, d2) + glm::vec4(0.0f, 0.0f, 1.0f, 0.0f));
+        z = rotateIter(m, hmul(z, z) + c);
+        r2 = glm::dot(z, z);
+        if (r2 > kBailout2) break;
+    }
+    if (r2 <= kBailout2) return 0.0f;
+    const glm::vec3 g{glm::dot(d0, z), glm::dot(d1, z), glm::dot(d2, z)};
+    return 0.25f * r2 * std::log(r2) / std::max(glm::length(g), 1e-20f);
+}
+
 float deBulb(const MarchParams& m, glm::vec3 worldPos) {
     const glm::vec3 c{worldPos.x, worldPos.z, worldPos.y};
     glm::vec3 z = c;
@@ -92,6 +131,8 @@ float distanceEstimate(const MarchParams& m, glm::vec3 pos) {
     case Formula3D::QuatJulia: return deQuat(m, pos, true);
     case Formula3D::Mandelbulb: return deBulb(m, pos);
     case Formula3D::Bicomplex: return deBicomplex(m, pos);
+    case Formula3D::Hypercomplex: return deHyper(m, pos);
+    case Formula3D::QuatFlip: return deQuatFlip(m, pos);
     default: return deQuat(m, pos, false);
     }
 }

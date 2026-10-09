@@ -10,7 +10,15 @@ namespace fb {
 class Context;
 class PaletteTexture;
 
-enum class Formula3D : uint32_t { QuatMandelbrot = 0, QuatJulia = 1, Mandelbulb = 2, Bicomplex = 3, Count };
+enum class Formula3D : uint32_t {
+    QuatMandelbrot = 0,
+    QuatJulia = 1,
+    Mandelbulb = 2,
+    Bicomplex = 3,
+    Hypercomplex = 4, // commutative i,j,k squaring from Yann Le Bihan's video (see raymarch.wgsl)
+    QuatFlip = 5,     // quaternion with Syntopia's first-iteration y/z flip
+    Count
+};
 
 enum MarchFlags : uint32_t {
     kMarchShadows = 1u << 0,

@@ -37,7 +37,7 @@ struct AppOptions {
     std::string benchOut; // benchmark JSON output path
     int palette = 0;
     ViewMode mode = ViewMode::Plane2D;
-    int formula = 0; // Formula3D
+    int formula = 4; // Formula3D (default: hypercomplex, as in the video)
     uint32_t iter3d = 0; // 0 = formula default
     float detail = 0.0f; // 0 = default; hit threshold in pixels
     float power = 0.0f;  // 0 = default; Mandelbulb exponent

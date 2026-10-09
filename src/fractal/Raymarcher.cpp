@@ -69,6 +69,14 @@ void applyFormulaDefaults(MarchParams& params, Formula3D formula) {
         params.boundCenter = {-0.75f, 0.0f, 0.0f};
         params.boundRadius = 2.2f;
         break;
+    case Formula3D::Hypercomplex:
+    case Formula3D::QuatFlip:
+        params.iterations = 64;
+        params.detail = 0.4f;
+        params.trapMix = 0.8f;
+        params.boundCenter = {-0.5f, 0.0f, 0.0f};
+        params.boundRadius = 2.4f;
+        break;
     case Formula3D::Count:
         break;
     }

@@ -19,6 +19,7 @@ const std::vector<BenchScene>& benchScenes() {
         {.name = "3d_julia", .mode = 1, .formula = 1},
         {.name = "3d_bulb", .mode = 1, .formula = 2},
         {.name = "3d_bicomplex", .mode = 1, .formula = 3},
+        {.name = "3d_hyper", .mode = 1, .formula = 4},
         {.name = "logistic", .mode = 2},
     };
     return scenes;
