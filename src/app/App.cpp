@@ -184,7 +184,10 @@ void App::handleInput(float dt) {
     if (m_mode == ViewMode::Plane2D)
         handleInput2D(dt, mx, my, scroll, mouseFree, keysFree);
     else
-        handleInputOrbit(activeOrbit(), dt, mx, my, scroll, mouseFree, keysFree);
+        if (m_mode == ViewMode::Fractal3D)
+            handleInputFractal3D(dt, mx, my, scroll, mouseFree, keysFree);
+        else
+            handleInputOrbit(activeOrbit(), dt, mx, my, scroll, mouseFree, keysFree);
 
     m_lastCursor[0] = mx;
     m_lastCursor[1] = my;
@@ -217,20 +220,9 @@ void App::handleInput2D(float dt, double mx, double my, double scroll, bool mous
 
 void App::handleInputOrbit(OrbitCamera& cam, float dt, double mx, double my, double scroll, bool mouseFree,
                            bool keysFree) {
-    // Re-pivot between drags; keeping the pivot fixed during a drag keeps rotation stable.
-    const bool fractal = m_mode == ViewMode::Fractal3D;
-    const float pixelAngle = 2.0f * std::tan(0.5f * cam.fovY) / float(std::max(m_ctx.height, 1u));
-    if (fractal && !m_dragging) pivotOnSurface(cam, m_march, pixelAngle);
-    auto zoom = [&](float factor) {
-        if (fractal)
-            zoomTowardSurface(cam, m_march, pixelAngle, factor);
-        else
-            cam.dolly(factor);
-    };
-
     const bool left = m_window.mouseDown(GLFW_MOUSE_BUTTON_LEFT);
     if (mouseFree) {
-        if (scroll != 0.0) zoom(float(std::pow(0.9, scroll)));
+        if (scroll != 0.0) cam.dolly(float(std::pow(0.9, scroll)));
         if (m_dragging && left)
             cam.rotate(-float(mx - m_lastCursor[0]) * 0.005f, float(my - m_lastCursor[1]) * 0.005f);
         m_dragging = left;
@@ -239,7 +231,6 @@ void App::handleInputOrbit(OrbitCamera& cam, float dt, double mx, double my, dou
     }
 
     if (keysFree) {
-        // Fly the orbit target; speed scales with distance so close-ups stay controllable.
         const float step = 0.6f * dt * cam.distance;
         glm::vec3 move{0.0f};
         if (m_window.keyDown(GLFW_KEY_W) || m_window.keyDown(GLFW_KEY_UP)) move += cam.groundForward();
@@ -249,9 +240,67 @@ void App::handleInputOrbit(OrbitCamera& cam, float dt, double mx, double my, dou
         if (m_window.keyDown(GLFW_KEY_E)) move.y += 1.0f;
         if (m_window.keyDown(GLFW_KEY_Q)) move.y -= 1.0f;
         cam.target += move * step;
+        if (m_window.keyDown(GLFW_KEY_Z)) cam.dolly(float(std::pow(0.3, dt)));
+        if (m_window.keyDown(GLFW_KEY_X)) cam.dolly(float(std::pow(1.0 / 0.3, dt)));
+    }
+}
 
-        if (m_window.keyDown(GLFW_KEY_Z)) zoom(float(std::pow(0.3, dt)));
-        if (m_window.keyDown(GLFW_KEY_X)) zoom(float(std::pow(1.0 / 0.3, dt)));
+void App::handleInputFractal3D(float dt, double mx, double my, double scroll, bool mouseFree, bool keysFree) {
+    // Navigation is anchored to the surface under the cursor: zoom moves toward it, drag
+    // orbits around the point you grabbed, right/shift-drag pans so that point follows the
+    // cursor. Speeds therefore scale with the distance to what you're looking at.
+    OrbitCamera& cam = m_marchOrbit;
+    const float w = float(std::max(m_ctx.width, 1u)), h = float(std::max(m_ctx.height, 1u));
+    const float aspect = w / h;
+    const float pixelAngle = 2.0f * std::tan(0.5f * cam.fovY) / h;
+    const glm::vec3 cursorDir =
+        cam.rayDir(glm::vec2(2.0f * float(mx) / w - 1.0f, 1.0f - 2.0f * float(my) / h), aspect);
+
+    const bool left = m_window.mouseDown(GLFW_MOUSE_BUTTON_LEFT);
+    const bool right = m_window.mouseDown(GLFW_MOUSE_BUTTON_RIGHT);
+    const bool shift = m_window.keyDown(GLFW_KEY_LEFT_SHIFT) || m_window.keyDown(GLFW_KEY_RIGHT_SHIFT);
+    if (mouseFree) {
+        if (scroll != 0.0) zoomAlongRay(cam, m_march, cursorDir, pixelAngle, float(std::pow(0.85, scroll)));
+
+        if ((left || right) && !m_dragging) {
+            // Grab the surface point under the cursor (or a point at the focus distance).
+            const glm::vec3 eye = cam.position();
+            const float d = raycast(m_march, eye, cursorDir, pixelAngle).value_or(cam.distance);
+            m_grabPoint = eye + cursorDir * d;
+            m_grabDepth = glm::dot(m_grabPoint - eye, cam.forward());
+            m_dragPan = right || shift;
+        } else if (m_dragging && (left || right)) {
+            const float dx = float(mx - m_lastCursor[0]);
+            const float dy = float(my - m_lastCursor[1]);
+            if (m_dragPan) {
+                // Move in the view plane so the grabbed point stays under the cursor.
+                const float k = 2.0f * std::tan(0.5f * cam.fovY) * m_grabDepth / h;
+                cam.translate(-(cam.right() * dx - cam.up() * dy) * k);
+            } else {
+                cam.orbitAround(m_grabPoint, -dx * 0.005f, dy * 0.005f);
+            }
+        }
+        m_dragging = left || right;
+    } else {
+        m_dragging = false;
+    }
+
+    if (keysFree) {
+        // Fly speed is a fraction of the clearance to the nearest surface per second, so you
+        // slow down near detail and can't fly through it.
+        const float step = 1.5f * dt * clearance(cam, m_march);
+        glm::vec3 move{0.0f};
+        if (m_window.keyDown(GLFW_KEY_W) || m_window.keyDown(GLFW_KEY_UP)) move += cam.forward();
+        if (m_window.keyDown(GLFW_KEY_S) || m_window.keyDown(GLFW_KEY_DOWN)) move -= cam.forward();
+        if (m_window.keyDown(GLFW_KEY_D) || m_window.keyDown(GLFW_KEY_RIGHT)) move += cam.right();
+        if (m_window.keyDown(GLFW_KEY_A) || m_window.keyDown(GLFW_KEY_LEFT)) move -= cam.right();
+        if (m_window.keyDown(GLFW_KEY_E)) move += cam.up();
+        if (m_window.keyDown(GLFW_KEY_Q)) move -= cam.up();
+        if (move != glm::vec3(0.0f)) cam.translate(glm::normalize(move) * step);
+
+        const glm::vec3 center = cam.forward();
+        if (m_window.keyDown(GLFW_KEY_Z)) zoomAlongRay(cam, m_march, center, pixelAngle, float(std::pow(0.3, dt)));
+        if (m_window.keyDown(GLFW_KEY_X)) zoomAlongRay(cam, m_march, center, pixelAngle, float(std::pow(1.0 / 0.3, dt)));
     }
 }
 
@@ -386,7 +435,9 @@ void App::drawUi() {
     if (m_mode == ViewMode::Plane2D)
         ImGui::TextDisabled("drag: pan  scroll / Z X: zoom in/out\nWASD/arrows: pan");
     else
-        ImGui::TextDisabled("drag: orbit  scroll / Z X: zoom in/out\nWASD: move target  Q/E: down/up");
+        ImGui::TextDisabled(m_mode == ViewMode::Fractal3D
+                                ? "drag: orbit grabbed point  right/shift-drag: pan\nscroll: zoom to cursor  Z X: zoom in/out\nWASD: fly  Q/E: down/up"
+                                : "drag: orbit  scroll / Z X: zoom in/out\nWASD: move target  Q/E: down/up");
     ImGui::TextDisabled("1-3 / Tab: mode  P: screenshot");
     ImGui::End();
 }

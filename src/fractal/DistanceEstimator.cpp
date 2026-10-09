@@ -157,25 +157,13 @@ std::optional<float> raycast(const MarchParams& m, glm::vec3 origin, glm::vec3 d
     return std::nullopt;
 }
 
-bool pivotOnSurface(OrbitCamera& cam, const MarchParams& m, float pixelAngle) {
-    const glm::vec3 eye = cam.position();
-    const glm::vec3 forward = glm::normalize(cam.target - eye);
-    // Thin fins can pass right beside the camera while the surface ahead is still far, so
-    // also cap the pivot at the distance to the nearest geometry in any direction.
-    const float nearest = std::max(distanceEstimate(m, eye), 1e-6f);
-    const auto hit = raycast(m, eye, forward, pixelAngle);
-    const float pivot = std::min(hit ? *hit : cam.distance, nearest);
-    if (!hit && pivot >= cam.distance) return false;
-    cam.target = eye + forward * pivot;
-    cam.distance = pivot;
-    return true;
+void zoomAlongRay(OrbitCamera& cam, const MarchParams& m, glm::vec3 dir, float pixelAngle, float factor) {
+    const float ahead = raycast(m, cam.position(), dir, pixelAngle).value_or(cam.distance);
+    cam.translate(dir * ((1.0f - factor) * ahead));
 }
 
-void zoomTowardSurface(OrbitCamera& cam, const MarchParams& m, float pixelAngle, float factor) {
-    const glm::vec3 eye = cam.position();
-    const glm::vec3 forward = glm::normalize(cam.target - eye);
-    const float ahead = raycast(m, eye, forward, pixelAngle).value_or(cam.distance);
-    cam.target += forward * ((1.0f - factor) * ahead);
+float clearance(const OrbitCamera& cam, const MarchParams& m) {
+    return std::max(distanceEstimate(m, cam.position()), 1e-6f);
 }
 
 } // namespace fb

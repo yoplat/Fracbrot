@@ -47,8 +47,56 @@ int main() {
     check(raycast(bulb, {0.0f, 0.0f, 3.0f}, {0.0f, 0.0f, -1.0f}, pixelAngle).has_value(), "mandelbulb hit");
     check(!raycast(bulb, {0.0f, 3.0f, 3.0f}, {0.0f, 0.0f, -1.0f}, pixelAngle).has_value(), "miss above bulb");
 
-    // Scroll-zooming toward the surface: 60 notches of dolly(0.9), re-pivoting each time like
-    // the app does. The camera must approach the surface without ever entering the set.
+    // Navigation: each operation keeps the grabbed / cursor point fixed on screen.
+    {
+        MarchParams m;
+        applyFormulaDefaults(m, Formula3D::Hypercomplex);
+        OrbitCamera cam;
+        cam.target = {-0.9f, 0.0f, 0.0f};
+        cam.yaw = 0.15f;
+        cam.pitch = 0.06f;
+        cam.distance = 2.6f;
+        const float aspect = 1.6f, H = 1000.0f;
+        const float pa = 2.0f * std::tan(0.5f * cam.fovY) / H;
+        auto project = [&](glm::vec3 p) {
+            const glm::vec4 clip = cam.projection(aspect) * cam.view() * glm::vec4(p, 1.0f);
+            return glm::vec2(clip) / clip.w;
+        };
+        auto near2 = [](glm::vec2 a, glm::vec2 b, float tol) { return glm::length(a - b) < tol; };
+
+        // Zoom toward an off-center cursor: the surface point under it stays put.
+        const glm::vec2 cursor{0.3f, -0.2f};
+        for (int i = 0; i < 20; ++i) {
+            const glm::vec3 dir = cam.rayDir(cursor, aspect);
+            const auto hit = raycast(m, cam.position(), dir, pa);
+            if (!hit) break;
+            const glm::vec3 p = cam.position() + dir * *hit;
+            zoomAlongRay(cam, m, dir, pa, 0.85f);
+            if (!near2(project(p), cursor, 1e-3f)) {
+                check(false, "zoom keeps the point under the cursor");
+                break;
+            }
+        }
+
+        // Orbit around a grabbed point: it keeps its screen position.
+        const glm::vec3 dir = cam.rayDir(cursor, aspect);
+        const glm::vec3 grab = cam.position() + dir * raycast(m, cam.position(), dir, pa).value_or(1.0f);
+        const glm::vec2 before = project(grab);
+        cam.orbitAround(grab, 0.4f, -0.25f);
+        check(near2(project(grab), before, 1e-3f), "orbit keeps the grabbed point on screen");
+
+        // Pan by (dx, dy) pixels: the grabbed point follows the cursor exactly.
+        const float depth = glm::dot(grab - cam.position(), cam.forward());
+        const float dx = 40.0f, dy = -25.0f;
+        const float k = 2.0f * std::tan(0.5f * cam.fovY) * depth / H;
+        const glm::vec2 start = project(grab);
+        cam.translate(-(cam.right() * dx - cam.up() * dy) * k);
+        const glm::vec2 expected = start + glm::vec2(2.0f * dx / (H * aspect), -2.0f * dy / H);
+        check(near2(project(grab), expected, 1e-3f), "pan moves the grabbed point with the cursor");
+    }
+
+    // Scroll-zooming at the screen center: 120 notches approach the surface without ever
+    // entering the set.
     {
         MarchParams m;
         applyFormulaDefaults(m, Formula3D::QuatMandelbrot);
@@ -58,37 +106,16 @@ int main() {
         cam.pitch = 0.08f;
         cam.distance = 3.6f;
         const float pa = 2.0f * std::tan(0.5f * cam.fovY) / 800.0f;
-        const glm::vec3 center = cam.target; // the old, fixed orbit pivot
-
-        bool alwaysOutside = true;
-        float worstOld = 0.0f, worstNew = 0.0f;
-        auto ahead = [&] {
-            const glm::vec3 eye = cam.position();
-            return raycast(m, eye, glm::normalize(cam.target - eye), pa).value_or(1e9f);
-        };
+        auto ahead = [&] { return raycast(m, cam.position(), cam.forward(), pa).value_or(1e9f); };
         const float aheadStart = ahead();
-        float aheadPrev = aheadStart;
+        bool alwaysOutside = true;
         for (int i = 0; i < 120; ++i) {
-            // One pixel of drag rotates the orbit by 0.005 rad, moving the camera R * 0.005.
-            // The nearest geometry, at distance e, then sweeps R * 0.005 / e rad across the screen.
-            const glm::vec3 eye = cam.position();
-            const float e = distanceEstimate(m, eye);
-            worstOld = std::max(worstOld, glm::length(eye - center) * 0.005f / e / pa);
-            pivotOnSurface(cam, m, pa);
-            worstNew = std::max(worstNew, cam.distance * 0.005f / e / pa);
-            zoomTowardSurface(cam, m, pa, 0.9f); // one scroll notch
+            zoomAlongRay(cam, m, cam.forward(), pa, 0.85f);
             if (distanceEstimate(m, cam.position()) <= 0.0f) alwaysOutside = false;
-            aheadPrev = ahead();
         }
-        // Sub-pixel fins resolve into gaps as you approach, so "ahead" can jump; overall it
-        // must still close in by orders of magnitude without ever entering the set.
         check(alwaysOutside, "zooming never enters the set");
-        check(aheadPrev < aheadStart * 0.01f, "zooming gets close to the surface ahead");
-        check(worstNew < 10.0f, "drag moves nearby geometry a few pixels per pixel at most");
-        std::printf("after 120 zoom steps: surface ahead %.4f -> %.5f, nearest geometry %.5f\n", aheadStart,
-                    aheadPrev, distanceEstimate(m, cam.position()));
-        std::printf("worst drag speed of nearby geometry: %.0f px/px (old pivot) vs %.1f px/px (new)\n",
-                    worstOld, worstNew);
+        check(ahead() < aheadStart * 0.01f, "zooming gets close to the surface ahead");
+        std::printf("after 120 zoom steps: surface ahead %.4f -> %.6f\n", aheadStart, ahead());
     }
 
     if (failures == 0) std::printf("distance tests passed\n");

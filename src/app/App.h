@@ -57,6 +57,7 @@ public:
 private:
     void handleInput(float dt);
     void handleInput2D(float dt, double mx, double my, double scroll, bool mouseFree, bool keysFree);
+    void handleInputFractal3D(float dt, double mx, double my, double scroll, bool mouseFree, bool keysFree);
     void handleInputOrbit(OrbitCamera& cam, float dt, double mx, double my, double scroll, bool mouseFree,
                           bool keysFree);
     void resetCameras();
@@ -103,6 +104,9 @@ private:
     double m_lastTime = 0.0;
     double m_lastCursor[2] = {0.0, 0.0};
     bool m_dragging = false;
+    bool m_dragPan = false;       // current 3D drag pans instead of orbiting
+    glm::vec3 m_grabPoint{0.0f};  // 3D point grabbed at drag start
+    float m_grabDepth = 1.0f;     // its depth along the view axis
     int m_paletteIndex = 0;
     float m_colorCycleSpeed = 0.0f;
     bool m_screenshotRequested = false;

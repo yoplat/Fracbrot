@@ -17,14 +17,13 @@ float distanceEstimate(const MarchParams& m, glm::vec3 pos);
 // threshold like the shader does. Returns the hit distance along the ray, if any.
 std::optional<float> raycast(const MarchParams& m, glm::vec3 origin, glm::vec3 dir, float pixelAngle);
 
-// Moves the orbit pivot onto the surface point at the screen center (or closer, if other
-// geometry is nearer to the camera) without moving the camera, so rotation, zoom and
-// movement scale with the distance to what's around you. Returns false if unchanged.
-bool pivotOnSurface(OrbitCamera& cam, const MarchParams& m, float pixelAngle);
+// Moves the camera along unit `dir` by (1 - factor) of the distance to the surface that
+// direction hits (factor > 1 backs off), so the point under the cursor stays under it.
+// Forward-only motion can't cross the surface ahead. Falls back to the camera's focus
+// distance when the ray misses.
+void zoomAlongRay(OrbitCamera& cam, const MarchParams& m, glm::vec3 dir, float pixelAngle, float factor);
 
-// Moves the camera straight ahead by (1 - factor) of the distance to the surface in view
-// (factor > 1 backs off). Forward-only motion can't cross what's ahead, so this uses the
-// surface distance rather than the nearest geometry and stays quick in narrow gaps.
-void zoomTowardSurface(OrbitCamera& cam, const MarchParams& m, float pixelAngle, float factor);
+// Distance to the nearest surface from the camera, for scaling fly speed.
+float clearance(const OrbitCamera& cam, const MarchParams& m);
 
 } // namespace fb
