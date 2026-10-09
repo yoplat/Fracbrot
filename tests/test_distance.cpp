@@ -1,4 +1,5 @@
 #include "fractal/DistanceEstimator.h"
+#include "fractal/Navigator3D.h"
 
 #include <glm/glm.hpp>
 
@@ -71,7 +72,7 @@ int main() {
             const auto hit = raycast(m, cam.positionD(), dir, pa);
             if (!hit) break;
             const glm::vec3 p(cam.positionD() + dir * *hit);
-            zoomAlongRay(cam, m, dir, pa, 0.85f);
+            zoomAlongRay(cam, m, dir, pa, kZoomPerScrollUnit);
             if (!near2(project(p), cursor, 1e-3f)) {
                 check(false, "zoom keeps the point under the cursor");
                 break;
@@ -97,7 +98,8 @@ int main() {
     }
 
     // Scroll-zooming at the screen center: 120 notches approach the surface without ever
-    // entering the set.
+    // entering the set. The center ray soon grazes the needle without hitting it (within the
+    // shader's step budget), so this also covers zooming on the carried focus distance.
     {
         MarchParams m;
         applyFormulaDefaults(m, Formula3D::QuatMandelbrot);
@@ -107,16 +109,15 @@ int main() {
         cam.pitch = 0.08f;
         cam.distance = 3.6f;
         const float pa = 2.0f * std::tan(0.5f * cam.fovY) / 800.0f;
-        auto ahead = [&] { return raycast(m, cam.positionD(), glm::dvec3(cam.forward()), pa).value_or(1e9); };
-        const float aheadStart = ahead();
+        const double clearanceStart = clearance(cam, m);
         bool alwaysOutside = true;
         for (int i = 0; i < 120; ++i) {
-            zoomAlongRay(cam, m, glm::dvec3(cam.forward()), pa, 0.85);
+            zoomAlongRay(cam, m, glm::normalize(glm::dvec3(cam.forward())), pa, kZoomPerScrollUnit);
             if (distanceEstimate(m, cam.positionD()) <= 0.0) alwaysOutside = false;
         }
         check(alwaysOutside, "zooming never enters the set");
-        check(ahead() < aheadStart * 0.01f, "zooming gets close to the surface ahead");
-        std::printf("after 120 zoom steps: surface ahead %.4f -> %.6f\n", aheadStart, ahead());
+        check(clearance(cam, m) < clearanceStart * 0.01, "zooming gets close to the surface");
+        std::printf("after 120 zoom steps: clearance %.4f -> %.3e\n", clearanceStart, clearance(cam, m));
     }
 
     if (failures == 0) std::printf("distance tests passed\n");

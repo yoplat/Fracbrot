@@ -22,14 +22,21 @@ glm::dvec4 toSlice(const MarchParams& m, glm::dvec3 pos);
 // orbit escapes far outside the set or after `maxLen` entries; always at least 2 entries.
 std::vector<glm::vec4> referenceOrbit(const MarchParams& m, glm::dvec3 origin, uint32_t maxLen);
 
-// Marches from `origin` along unit `dir` against the fractal. `pixelAngle` sets the hit
-// threshold like the shader does. Returns the hit distance along the ray, if any.
+// Marches from `origin` along unit `dir` against the fractal. `pixelAngle` (that of the
+// rendered image) sets the hit threshold and m.maxSteps the step budget, like the shader.
+// Returns the hit distance along the ray, if any.
 std::optional<double> raycast(const MarchParams& m, glm::dvec3 origin, glm::dvec3 dir, double pixelAngle);
 
 // Moves the camera along unit `dir` by (1 - factor) of the distance to the surface that
 // direction hits (factor > 1 backs off), so the point under the cursor stays under it.
-// Forward-only motion can't cross the surface ahead. Falls back to the camera's focus
-// distance when the ray misses.
+// When the ray misses it uses the camera's focus distance (cam.distance) instead. Either way
+// the focus becomes the remaining distance (ahead * factor), so background zooms converge
+// geometrically and reverse exactly. It never moves onto a surface: forward motion stops
+// short of the hit, and backing off that is blocked (a surface behind closer than twice the
+// move, a destination inside the set, or, deep in, one that gives up most of the
+// clearance) turns into backing away from the nearest surface. A move that would still end
+// inside the set is shortened (to 0.9 x the clearance, halved further where the estimate
+// overshoots).
 void zoomAlongRay(OrbitCamera& cam, const MarchParams& m, glm::dvec3 dir, double pixelAngle, double factor);
 
 // Distance to the nearest surface from the camera, for scaling fly speed.

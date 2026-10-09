@@ -2,11 +2,13 @@
 
 #include "app/Benchmark.h"
 #include "app/Gui.h"
+#include "app/KeyRepeat.h"
 #include "camera/Camera2D.h"
 #include "camera/OrbitCamera.h"
 #include "fractal/Bifurcation.h"
 #include "fractal/Buddhabrot.h"
 #include "fractal/Mandel2D.h"
+#include "fractal/Navigator3D.h"
 #include "fractal/OrbitTracer.h"
 #include "fractal/Palette.h"
 #include "fractal/Raymarcher.h"
@@ -64,7 +66,10 @@ private:
     void handleInputFractal3D(float dt, double mx, double my, double scroll, bool mouseFree, bool keysFree);
     void handleInputOrbit(OrbitCamera& cam, float dt, double mx, double my, double scroll, bool mouseFree,
                           bool keysFree);
+    // Steps the current mode's iteration count up (dir > 0) or down (- / + keys).
+    void stepModeIterations(int dir);
     void resetCameras();
+    void resetView(); // the current mode's camera only
     void applyBenchScene(const BenchScene& scene);
     void animate(double time);
     void drawUi();
@@ -89,6 +94,7 @@ private:
     Camera2D m_buddhaCamera;  // Buddhabrot view (rotated view space when upright)
     BuddhaSettings m_buddhaSettings;
     OrbitCamera m_marchOrbit; // 3D fractal viewpoint
+    Navigator3D m_nav3d;
     MarchParams m_march;
     float m_renderScale = 0.75f;
     bool m_fastControls = true; // half resolution while the 3D view is changing
@@ -98,6 +104,7 @@ private:
     bool m_animate = false;   // sweeps sliceW / power / Julia constant over time
     OrbitCamera m_logisticOrbit;
     BifurcationParams m_bif;
+    uint32_t m_logisticIter = 256; // iterations of the plane under the logistic map
     float m_logisticR = 3.5f;
     bool m_highlightR = true;
     bool m_autoRotate = false;
@@ -113,18 +120,18 @@ private:
     double m_lastTime = 0.0;
     double m_lastCursor[2] = {0.0, 0.0};
     bool m_dragging = false;
-    bool m_dragPan = false;       // current 3D drag pans instead of orbiting
-    glm::vec3 m_grabPoint{0.0f};  // 3D point grabbed at drag start
-    float m_grabDepth = 1.0f;     // its depth along the view axis
     int m_paletteIndex = 0;
     float m_colorCycleSpeed = 0.0f;
     bool m_screenshotRequested = false;
     bool m_screenshotWithUi = false;
     bool m_keyWasDown[512] = {};
+    bool m_keyPressed[512] = {}; // went down this frame
+    KeyRepeat m_iterUp, m_iterDown;
     std::string m_lastScreenshot;
     std::optional<Benchmark> m_bench;
 
-    bool keyPressed(int key); // edge-triggered
+    void updateKeyEdges(); // every frame, so edges are never stale
+    bool keyPressed(int key) const { return m_keyPressed[key]; } // edge-triggered
 };
 
 } // namespace fb

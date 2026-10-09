@@ -42,10 +42,25 @@ struct OrbitCamera {
     // Moves the camera (and its target) without turning it.
     void translate(glm::dvec3 delta) { target += delta; }
 
+    // Sets the focus distance (`distance`) to `d`, keeping the camera where it is: the target
+    // slides along the view axis.
+    void refocus(double d) {
+        const glm::dvec3 p = positionD();
+        distance = d;
+        target = p - glm::dvec3(back()) * d;
+    }
+
     // Direction of the ray through normalized device coordinates (x right, y up, in [-1, 1]).
     glm::vec3 rayDir(glm::vec2 ndc, float aspect) const {
         const float t = std::tan(0.5f * fovY);
         return glm::normalize(forward() + right() * (ndc.x * t * aspect) + up() * (ndc.y * t));
+    }
+
+    // rayDir in double precision, for CPU raycasts at deep zoom.
+    glm::dvec3 rayDirD(glm::dvec2 ndc, double aspect) const {
+        const double t = std::tan(0.5 * double(fovY));
+        return glm::normalize(glm::dvec3(forward()) + glm::dvec3(right()) * (ndc.x * t * aspect) +
+                              glm::dvec3(up()) * (ndc.y * t));
     }
 
     // Swings the camera around `pivot` (yaw about world up, pitch about the camera's right

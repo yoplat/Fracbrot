@@ -7,8 +7,11 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <ctime>
+#include <numbers>
+#include <span>
 
 namespace fb {
 
@@ -25,28 +28,6 @@ const char* const kFormulaNames[] = {"Quaternion Mandelbrot", "Quaternion Julia"
                                       "Bicomplex Mandelbrot (Tetrabrot)", "Hypercomplex Mandelbrot (video)",
                                       "Quaternion + Syntopia flip"};
 static_assert(std::size(kFormulaNames) == size_t(Formula3D::Count));
-
-OrbitCamera marchHome(const MarchParams& march) {
-    OrbitCamera cam;
-    cam.target = march.boundCenter;
-    cam.yaw = 0.45f;
-    cam.pitch = 0.3f;
-    cam.distance = 3.2f;
-    if (march.formula == Formula3D::Hypercomplex || march.formula == Formula3D::QuatFlip) {
-        // Side-on along the needle, like the video.
-        cam.target = {-0.9f, 0.0f, 0.0f};
-        cam.yaw = 0.15f;
-        cam.pitch = 0.06f;
-        cam.distance = 2.6f;
-    } else if (march.formula == Formula3D::QuatMandelbrot) {
-        // Side-on to the real axis, like Ice Fractal's default view.
-        cam.target = {-0.7f, 0.0f, 0.0f};
-        cam.yaw = 0.12f;
-        cam.pitch = 0.08f;
-        cam.distance = 3.6f;
-    }
-    return cam;
-}
 
 OrbitCamera logisticHome() {
     OrbitCamera cam;
@@ -108,6 +89,7 @@ bool App::init(const AppOptions& opts) {
     }
     if (opts.target && m_mode != ViewMode::Plane2D) activeOrbit().target = *opts.target;
     m_params.maxIter = opts.maxIter;
+    m_logisticIter = opts.maxIter;
     m_lastTime = glfwGetTime();
 
     if (opts.bench) {
@@ -123,6 +105,7 @@ void App::applyBenchScene(const BenchScene& scene) {
     m_mode = ViewMode(scene.mode);
     m_params = {};
     m_params.maxIter = scene.iter;
+    m_logisticIter = scene.iter;
     m_animate = false;
     m_autoRotate = false;
     m_showOrbit = false;
@@ -144,7 +127,21 @@ void App::resetCameras() {
     m_camera.reset();
     m_buddhaCamera = buddhaHome(m_buddhaSettings.rotate);
     m_marchOrbit = marchHome(m_march);
+    m_nav3d.reset();
     m_logisticOrbit = logisticHome();
+}
+
+void App::resetView() {
+    switch (m_mode) {
+    case ViewMode::Plane2D: m_camera.reset(); break;
+    case ViewMode::Fractal3D:
+        m_marchOrbit = marchHome(m_march);
+        m_nav3d.reset(); // drop leftover scroll and the drag, which belong to the old view
+        break;
+    case ViewMode::LogisticMap: m_logisticOrbit = logisticHome(); break;
+    case ViewMode::Buddhabrot: m_buddhaCamera = buddhaHome(m_buddhaSettings.rotate); break;
+    case ViewMode::Count: break;
+    }
 }
 
 OrbitCamera& App::activeOrbit() { return m_mode == ViewMode::LogisticMap ? m_logisticOrbit : m_marchOrbit; }
@@ -173,11 +170,57 @@ void App::animate(double time) {
     }
 }
 
-bool App::keyPressed(int key) {
-    const bool down = m_window.keyDown(key);
-    const bool pressed = down && !m_keyWasDown[key];
-    m_keyWasDown[key] = down;
-    return pressed;
+namespace {
+
+// Keys with edge-triggered actions; their edges are tracked every frame.
+constexpr int kEdgeKeys[] = {GLFW_KEY_1, GLFW_KEY_2, GLFW_KEY_3, GLFW_KEY_4, GLFW_KEY_TAB,
+                             GLFW_KEY_P, GLFW_KEY_R, GLFW_KEY_O};
+
+// Help shown in the Controls table. Keep in sync with handleInput* below.
+struct ControlHelp {
+    const char* input;
+    const char* action;
+};
+const ControlHelp kControls2D[] = {
+    {"drag", "pan"},         {"scroll", "zoom at cursor"}, {"Z / X", "zoom in / out"},
+    {"W A S D", "pan"},      {"- / +", "iterations"},      {"O", "trace orbit"},
+};
+const ControlHelp kControls3D[] = {
+    {"drag", "orbit grabbed point"}, {"shift + drag", "pan"},     {"scroll", "zoom to cursor"},
+    {"Z / X", "zoom in / out"},      {"W A S D", "fly"},          {"Q / E", "down / up"},
+    {"- / +", "iterations"},
+};
+const ControlHelp kControlsLogistic[] = {
+    {"drag", "orbit"},  {"scroll", "zoom"},      {"Z / X", "zoom in / out"},
+    {"W A S D", "move"}, {"Q / E", "down / up"}, {"- / +", "plane iterations"},
+};
+const ControlHelp kControlsBuddhabrot[] = {
+    {"drag", "pan"},    {"scroll", "zoom at cursor"}, {"Z / X", "zoom in / out"},
+    {"W A S D", "pan"}, {"- / +", "iteration limits"},
+};
+const ControlHelp kControlsGlobal[] = {
+    {"1-4 / Tab", "mode / next mode"},
+    {"R", "reset view"},
+    {"P", "screenshot"},
+};
+
+std::span<const ControlHelp> modeControls(ViewMode mode) {
+    switch (mode) {
+    case ViewMode::Fractal3D: return kControls3D;
+    case ViewMode::LogisticMap: return kControlsLogistic;
+    case ViewMode::Buddhabrot: return kControlsBuddhabrot;
+    default: return kControls2D;
+    }
+}
+
+} // namespace
+
+void App::updateKeyEdges() {
+    for (int key : kEdgeKeys) {
+        const bool down = m_window.keyDown(key);
+        m_keyPressed[key] = down && !m_keyWasDown[key];
+        m_keyWasDown[key] = down;
+    }
 }
 
 void App::handleInput(float dt) {
@@ -185,31 +228,58 @@ void App::handleInput(float dt) {
     m_window.cursorPos(mx, my);
     const double scroll = m_window.consumeScroll();
     const bool mouseFree = !m_gui.wantsMouse();
-    const bool keysFree = !m_gui.wantsKeyboard();
+    // A slider being dragged (or text being typed) keeps the keys from acting on the view.
+    const bool keysFree = !m_gui.wantsKeyboard() && !ImGui::IsAnyItemActive();
+
+    // Key state is tracked every frame; only the actions are gated.
+    updateKeyEdges();
+    const int iterUp = m_iterUp.update(m_window.keyDown(GLFW_KEY_EQUAL), dt);
+    const int iterDown = m_iterDown.update(m_window.keyDown(GLFW_KEY_MINUS), dt);
 
     if (keysFree) {
         if (keyPressed(GLFW_KEY_1)) m_mode = ViewMode::Plane2D;
         if (keyPressed(GLFW_KEY_2)) m_mode = ViewMode::Fractal3D;
         if (keyPressed(GLFW_KEY_3)) m_mode = ViewMode::LogisticMap;
         if (keyPressed(GLFW_KEY_4)) m_mode = ViewMode::Buddhabrot;
-        if (keyPressed(GLFW_KEY_O)) m_showOrbit = !m_showOrbit;
         if (keyPressed(GLFW_KEY_TAB)) m_mode = ViewMode((int(m_mode) + 1) % int(ViewMode::Count));
+        if (keyPressed(GLFW_KEY_O) && m_mode == ViewMode::Plane2D) m_showOrbit = !m_showOrbit;
         if (keyPressed(GLFW_KEY_P)) m_screenshotRequested = true;
-        if (m_window.keyDown(GLFW_KEY_R)) resetCameras();
+        if (keyPressed(GLFW_KEY_R)) resetView();
+        for (int i = 0; i < iterUp; ++i) stepModeIterations(+1);
+        for (int i = 0; i < iterDown; ++i) stepModeIterations(-1);
     }
 
+    if (m_mode != ViewMode::Fractal3D) m_nav3d.reset();
     if (m_mode == ViewMode::Plane2D)
         handleInput2D(m_camera, dt, mx, my, scroll, mouseFree, keysFree);
     else if (m_mode == ViewMode::Buddhabrot)
         handleInput2D(m_buddhaCamera, dt, mx, my, scroll, mouseFree, keysFree);
+    else if (m_mode == ViewMode::Fractal3D)
+        handleInputFractal3D(dt, mx, my, scroll, mouseFree, keysFree);
     else
-        if (m_mode == ViewMode::Fractal3D)
-            handleInputFractal3D(dt, mx, my, scroll, mouseFree, keysFree);
-        else
-            handleInputOrbit(activeOrbit(), dt, mx, my, scroll, mouseFree, keysFree);
+        handleInputOrbit(m_logisticOrbit, dt, mx, my, scroll, mouseFree, keysFree);
 
     m_lastCursor[0] = mx;
     m_lastCursor[1] = my;
+}
+
+void App::stepModeIterations(int dir) {
+    switch (m_mode) {
+    case ViewMode::Plane2D: m_params.maxIter = stepIterations(m_params.maxIter, dir, 16, 20000); break;
+    case ViewMode::Fractal3D:
+        // Fewer iterations fatten the set; refuse a step that would swallow the camera.
+        m_march.iterations =
+            guardIterations(m_marchOrbit, m_march, stepIterations(m_march.iterations, dir, 2, 512));
+        break;
+    case ViewMode::LogisticMap: m_logisticIter = stepIterations(m_logisticIter, dir, 16, 5000); break;
+    case ViewMode::Buddhabrot: {
+        BuddhaSettings& s = m_buddhaSettings;
+        const uint32_t lo = std::max(10u, s.minIter);
+        for (int c = 0; c < (s.nebula ? 3 : 1); ++c) s.limits[c] = stepIterations(s.limits[c], dir, lo, 50000);
+        break;
+    }
+    case ViewMode::Count: break;
+    }
 }
 
 void App::handleInput2D(Camera2D& cam, float dt, double mx, double my, double scroll, bool mouseFree,
@@ -217,7 +287,7 @@ void App::handleInput2D(Camera2D& cam, float dt, double mx, double my, double sc
     const double w = m_ctx.width, h = m_ctx.height;
 
     if (mouseFree) {
-        if (scroll != 0.0) cam.zoomAt(mx, my, w, h, std::pow(0.9, scroll));
+        if (scroll != 0.0) cam.zoomAt(mx, my, w, h, std::pow(kZoomPerScrollUnit, scroll));
         const bool down = m_window.mouseDown(GLFW_MOUSE_BUTTON_LEFT);
         if (down && m_dragging) cam.pan(mx - m_lastCursor[0], my - m_lastCursor[1], h);
         m_dragging = down;
@@ -227,14 +297,12 @@ void App::handleInput2D(Camera2D& cam, float dt, double mx, double my, double sc
 
     if (keysFree) {
         const double panPx = 600.0 * dt;
-        if (m_window.keyDown(GLFW_KEY_LEFT) || m_window.keyDown(GLFW_KEY_A)) cam.pan(panPx, 0, h);
-        if (m_window.keyDown(GLFW_KEY_RIGHT) || m_window.keyDown(GLFW_KEY_D)) cam.pan(-panPx, 0, h);
-        if (m_window.keyDown(GLFW_KEY_UP) || m_window.keyDown(GLFW_KEY_W)) cam.pan(0, panPx, h);
-        if (m_window.keyDown(GLFW_KEY_DOWN) || m_window.keyDown(GLFW_KEY_S)) cam.pan(0, -panPx, h);
-        if (m_window.keyDown(GLFW_KEY_Z) || m_window.keyDown(GLFW_KEY_E) || m_window.keyDown(GLFW_KEY_EQUAL))
-            cam.zoomAt(w / 2, h / 2, w, h, std::pow(0.25, dt));
-        if (m_window.keyDown(GLFW_KEY_X) || m_window.keyDown(GLFW_KEY_Q) || m_window.keyDown(GLFW_KEY_MINUS))
-            cam.zoomAt(w / 2, h / 2, w, h, std::pow(4.0, dt));
+        if (m_window.keyDown(GLFW_KEY_A)) cam.pan(panPx, 0, h);
+        if (m_window.keyDown(GLFW_KEY_D)) cam.pan(-panPx, 0, h);
+        if (m_window.keyDown(GLFW_KEY_W)) cam.pan(0, panPx, h);
+        if (m_window.keyDown(GLFW_KEY_S)) cam.pan(0, -panPx, h);
+        if (m_window.keyDown(GLFW_KEY_Z)) cam.zoomAt(w / 2, h / 2, w, h, std::pow(1.0 / kKeyZoomPerSecond, dt));
+        if (m_window.keyDown(GLFW_KEY_X)) cam.zoomAt(w / 2, h / 2, w, h, std::pow(kKeyZoomPerSecond, dt));
     }
 }
 
@@ -242,101 +310,101 @@ void App::handleInputOrbit(OrbitCamera& cam, float dt, double mx, double my, dou
                            bool keysFree) {
     const bool left = m_window.mouseDown(GLFW_MOUSE_BUTTON_LEFT);
     if (mouseFree) {
-        if (scroll != 0.0) cam.dolly(float(std::pow(0.9, scroll)));
-        if (m_dragging && left)
-            cam.rotate(-float(mx - m_lastCursor[0]) * 0.005f, float(my - m_lastCursor[1]) * 0.005f);
+        if (scroll != 0.0) cam.dolly(float(std::pow(kZoomPerScrollUnit, scroll)));
+        if (m_dragging && left) {
+            // Half a turn per full-height drag, like the 3D fractal view.
+            const float radPerPx = std::numbers::pi_v<float> / float(std::max(m_ctx.height, 1u));
+            cam.rotate(-float(mx - m_lastCursor[0]) * radPerPx, float(my - m_lastCursor[1]) * radPerPx);
+        }
         m_dragging = left;
     } else {
         m_dragging = false;
     }
 
     if (keysFree) {
-        const float step = 0.6f * dt * cam.distance;
+        const double step = 0.6 * dt * cam.distance;
         glm::vec3 move{0.0f};
-        if (m_window.keyDown(GLFW_KEY_W) || m_window.keyDown(GLFW_KEY_UP)) move += cam.groundForward();
-        if (m_window.keyDown(GLFW_KEY_S) || m_window.keyDown(GLFW_KEY_DOWN)) move -= cam.groundForward();
-        if (m_window.keyDown(GLFW_KEY_D) || m_window.keyDown(GLFW_KEY_RIGHT)) move += cam.groundRight();
-        if (m_window.keyDown(GLFW_KEY_A) || m_window.keyDown(GLFW_KEY_LEFT)) move -= cam.groundRight();
+        if (m_window.keyDown(GLFW_KEY_W)) move += cam.groundForward();
+        if (m_window.keyDown(GLFW_KEY_S)) move -= cam.groundForward();
+        if (m_window.keyDown(GLFW_KEY_D)) move += cam.groundRight();
+        if (m_window.keyDown(GLFW_KEY_A)) move -= cam.groundRight();
         if (m_window.keyDown(GLFW_KEY_E)) move.y += 1.0f;
         if (m_window.keyDown(GLFW_KEY_Q)) move.y -= 1.0f;
-        cam.target += move * step;
-        if (m_window.keyDown(GLFW_KEY_Z)) cam.dolly(float(std::pow(0.3, dt)));
-        if (m_window.keyDown(GLFW_KEY_X)) cam.dolly(float(std::pow(1.0 / 0.3, dt)));
+        cam.target += glm::dvec3(move) * step;
+        if (m_window.keyDown(GLFW_KEY_Z)) cam.dolly(float(std::pow(1.0 / kKeyZoomPerSecond, dt)));
+        if (m_window.keyDown(GLFW_KEY_X)) cam.dolly(float(std::pow(kKeyZoomPerSecond, dt)));
     }
 }
 
 void App::handleInputFractal3D(float dt, double mx, double my, double scroll, bool mouseFree, bool keysFree) {
-    // Navigation is anchored to the surface under the cursor: zoom moves toward it, drag
-    // orbits around the point you grabbed, right/shift-drag pans so that point follows the
-    // cursor. Speeds therefore scale with the distance to what you're looking at.
-    OrbitCamera& cam = m_marchOrbit;
-    const float w = float(std::max(m_ctx.width, 1u)), h = float(std::max(m_ctx.height, 1u));
-    const float aspect = w / h;
-    const float pixelAngle = 2.0f * std::tan(0.5f * cam.fovY) / h;
-    const glm::vec3 cursorDir =
-        cam.rayDir(glm::vec2(2.0f * float(mx) / w - 1.0f, 1.0f - 2.0f * float(my) / h), aspect);
-
-    const bool left = m_window.mouseDown(GLFW_MOUSE_BUTTON_LEFT);
-    const bool right = m_window.mouseDown(GLFW_MOUSE_BUTTON_RIGHT);
-    const bool shift = m_window.keyDown(GLFW_KEY_LEFT_SHIFT) || m_window.keyDown(GLFW_KEY_RIGHT_SHIFT);
-    if (mouseFree) {
-        if (scroll != 0.0) zoomAlongRay(cam, m_march, cursorDir, pixelAngle, float(std::pow(0.85, scroll)));
-
-        if ((left || right) && !m_dragging) {
-            // Grab the surface point under the cursor (or a point at the focus distance).
-            const glm::vec3 eye = cam.position();
-            const float d = raycast(m_march, eye, cursorDir, pixelAngle).value_or(cam.distance);
-            m_grabPoint = eye + cursorDir * d;
-            m_grabDepth = glm::dot(m_grabPoint - eye, cam.forward());
-            m_dragPan = right || shift;
-        } else if (m_dragging && (left || right)) {
-            const float dx = float(mx - m_lastCursor[0]);
-            const float dy = float(my - m_lastCursor[1]);
-            if (m_dragPan) {
-                // Move in the view plane so the grabbed point stays under the cursor.
-                const float k = 2.0f * std::tan(0.5f * cam.fovY) * m_grabDepth / h;
-                cam.translate(-(cam.right() * dx - cam.up() * dy) * k);
-            } else {
-                cam.orbitAround(m_grabPoint, -dx * 0.005f, dy * 0.005f);
-            }
-        }
-        m_dragging = left || right;
-    } else {
-        m_dragging = false;
-    }
-
-    if (keysFree) {
-        // Fly speed is a fraction of the clearance to the nearest surface per second, so you
-        // slow down near detail and can't fly through it.
-        const float step = 1.5f * dt * clearance(cam, m_march);
-        glm::vec3 move{0.0f};
-        if (m_window.keyDown(GLFW_KEY_W) || m_window.keyDown(GLFW_KEY_UP)) move += cam.forward();
-        if (m_window.keyDown(GLFW_KEY_S) || m_window.keyDown(GLFW_KEY_DOWN)) move -= cam.forward();
-        if (m_window.keyDown(GLFW_KEY_D) || m_window.keyDown(GLFW_KEY_RIGHT)) move += cam.right();
-        if (m_window.keyDown(GLFW_KEY_A) || m_window.keyDown(GLFW_KEY_LEFT)) move -= cam.right();
-        if (m_window.keyDown(GLFW_KEY_E)) move += cam.up();
-        if (m_window.keyDown(GLFW_KEY_Q)) move -= cam.up();
-        if (move != glm::vec3(0.0f)) cam.translate(glm::normalize(move) * step);
-
-        const glm::vec3 center = cam.forward();
-        if (m_window.keyDown(GLFW_KEY_Z)) zoomAlongRay(cam, m_march, center, pixelAngle, float(std::pow(0.3, dt)));
-        if (m_window.keyDown(GLFW_KEY_X)) zoomAlongRay(cam, m_march, center, pixelAngle, float(std::pow(1.0 / 0.3, dt)));
-    }
+    // Navigator3D anchors everything to the surface under the cursor: scroll zooms toward it,
+    // drag orbits the grabbed point, shift-drag pans so that point follows the cursor, and
+    // speeds scale with the distance to what you're looking at.
+    auto key = [&](int k) { return keysFree && m_window.keyDown(k); };
+    NavInput in;
+    in.cursor = {mx, my};
+    in.prevCursor = {m_lastCursor[0], m_lastCursor[1]};
+    in.scroll = mouseFree ? scroll : 0.0;
+    in.left = mouseFree && m_window.mouseDown(GLFW_MOUSE_BUTTON_LEFT);
+    in.shift = m_window.keyDown(GLFW_KEY_LEFT_SHIFT) || m_window.keyDown(GLFW_KEY_RIGHT_SHIFT);
+    in.forward = key(GLFW_KEY_W);
+    in.back = key(GLFW_KEY_S);
+    in.leftKey = key(GLFW_KEY_A);
+    in.rightKey = key(GLFW_KEY_D);
+    in.up = key(GLFW_KEY_E);
+    in.down = key(GLFW_KEY_Q);
+    in.zoomIn = key(GLFW_KEY_Z);
+    in.zoomOut = key(GLFW_KEY_X);
+    in.dt = dt;
+    in.fbWidth = float(std::max(m_ctx.width, 1u));
+    in.fbHeight = float(std::max(m_ctx.height, 1u));
+    // CPU raycasts use the renderer's pixel size, so they hit what the screen shows.
+    in.pixelAngle = 2.0 * std::tan(0.5 * double(m_marchOrbit.fovY)) / (double(in.fbHeight) * m_renderScale);
+    m_nav3d.update(m_marchOrbit, m_march, in);
 }
 
 void App::drawUi() {
     ImGui::SetNextWindowPos({10, 10}, ImGuiCond_FirstUseEver);
-    ImGui::Begin("Fracbrot", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+    // The panel auto-sizes to its contents; cap its height so it scrolls instead of running
+    // off a short screen.
+    ImGui::SetNextWindowSizeConstraints({0, 0}, {FLT_MAX, ImGui::GetMainViewport()->WorkSize.y - 20});
+    // NoNavInputs: ImGui's own Tab focusing (on even without keyboard nav) would otherwise
+    // turn a slider into a text field when Tab switches the mode, swallowing every key.
+    ImGui::Begin("Fracbrot", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoNavInputs);
     ImGui::Text("%.1f fps", ImGui::GetIO().Framerate);
 
     int mode = int(m_mode);
     if (ImGui::Combo("mode (Tab)", &mode, kModeNames, int(ViewMode::Count))) m_mode = ViewMode(mode);
+    // Two bindings (input, action) per row, the mode's then the global ones, so the table
+    // stays short enough for the whole panel to fit a 1280x800 window.
+    if (ImGui::CollapsingHeader("Controls", ImGuiTreeNodeFlags_DefaultOpen)) {
+        // Wider cell padding keeps the two bindings in a row apart.
+        const ImVec2 pad = ImGui::GetStyle().CellPadding;
+        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, {2.0f * pad.x, pad.y});
+        const bool table = ImGui::BeginTable("controls", 4, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg);
+        ImGui::PopStyleVar();
+        if (table) {
+            auto cells = [](std::span<const ControlHelp> controls) {
+                for (const ControlHelp& c : controls) {
+                    ImGui::TableNextColumn(); // wraps to a new row after the 4th column
+                    ImGui::TextUnformatted(c.input);
+                    ImGui::TableNextColumn();
+                    ImGui::TextDisabled("%s", c.action);
+                }
+            };
+            cells(modeControls(m_mode));
+            ImGui::TableNextRow(); // the global ones start a row of their own
+            cells(kControlsGlobal);
+            ImGui::EndTable();
+        }
+    }
     ImGui::Separator();
 
     if (m_mode == ViewMode::Plane2D) {
         int iter = int(m_params.maxIter);
         if (ImGui::SliderInt("iterations", &iter, 16, 20000, "%d", ImGuiSliderFlags_Logarithmic))
             m_params.maxIter = uint32_t(std::max(iter, 1));
+        ImGui::SetItemTooltip("- / + keys");
         ImGui::Text("center  %s", m_camera.cx.toString(18).c_str());
         ImGui::Text("        %s", m_camera.cy.toString(18).c_str());
         ImGui::Text("zoom    %.3e", 1.2 / m_camera.scale);
@@ -350,7 +418,7 @@ void App::drawUi() {
         ImGui::SameLine();
         if (ImGui::Button("copy location")) ImGui::SetClipboardText(m_camera.toString().c_str());
     }
-    if (ImGui::Button("reset view (R)")) resetCameras();
+    if (ImGui::Button("reset view (R)")) resetView();
 
     if (m_mode == ViewMode::Fractal3D) {
         ImGui::SeparatorText("3D fractal");
@@ -358,10 +426,12 @@ void App::drawUi() {
         if (ImGui::Combo("formula", &formula, kFormulaNames, int(Formula3D::Count))) {
             applyFormulaDefaults(m_march, Formula3D(formula));
             m_marchOrbit = marchHome(m_march);
+            m_nav3d.reset();
         }
         int iters = int(m_march.iterations);
         if (ImGui::SliderInt("iterations", &iters, 2, 512, "%d", ImGuiSliderFlags_Logarithmic))
             m_march.iterations = uint32_t(iters);
+        ImGui::SetItemTooltip("- / + keys");
         if (m_march.formula == Formula3D::Mandelbulb) {
             ImGui::SliderFloat("power", &m_march.power, 1.0f, 16.0f);
         } else {
@@ -414,9 +484,10 @@ void App::drawUi() {
     if (m_mode == ViewMode::LogisticMap) {
         ImGui::SeparatorText("logistic map");
         ImGui::TextDisabled("x' = r x (1 - x)  <->  z' = z^2 + c\nc = r(2 - r)/4, z = r(1/2 - x)");
-        int iter = int(m_params.maxIter);
+        int iter = int(m_logisticIter);
         if (ImGui::SliderInt("plane iterations", &iter, 16, 5000, "%d", ImGuiSliderFlags_Logarithmic))
-            m_params.maxIter = uint32_t(std::max(iter, 1));
+            m_logisticIter = uint32_t(std::max(iter, 1));
+        ImGui::SetItemTooltip("- / + keys");
         ImGui::Checkbox("highlight r", &m_highlightR);
         if (m_highlightR) {
             ImGui::SliderFloat("r", &m_logisticR, 1.0f, 4.0f, "%.4f");
@@ -439,34 +510,35 @@ void App::drawUi() {
 
     if (m_mode == ViewMode::Buddhabrot) drawBuddhabrotUi();
 
-    ImGui::SeparatorText("color");
-    const auto presets = palettePresets();
-    if (ImGui::BeginCombo("palette", presets[size_t(m_paletteIndex)].name)) {
-        for (int i = 0; i < int(presets.size()); ++i) {
-            if (ImGui::Selectable(presets[size_t(i)].name, i == m_paletteIndex)) setPalette(i);
+    // Only show what the mode's shaders read: raymarch.wgsl colors by orbit trap, not smooth
+    // iteration counts, the Buddhabrot ignores FractalParams' color fields entirely, and its
+    // nebulabrot (RGB) display doesn't sample the palette.
+    const bool nebula = m_mode == ViewMode::Buddhabrot && m_buddhaSettings.nebula;
+    if (!nebula) {
+        ImGui::SeparatorText("color");
+        const auto presets = palettePresets();
+        if (ImGui::BeginCombo("palette", presets[size_t(m_paletteIndex)].name)) {
+            for (int i = 0; i < int(presets.size()); ++i) {
+                if (ImGui::Selectable(presets[size_t(i)].name, i == m_paletteIndex)) setPalette(i);
+            }
+            ImGui::EndCombo();
         }
-        ImGui::EndCombo();
     }
-    bool smooth = m_params.flags & kFlagSmooth;
-    if (ImGui::Checkbox("smooth", &smooth)) m_params.flags ^= kFlagSmooth;
-    ImGui::SliderFloat("density", &m_params.colorDensity, 0.05f, 8.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
-    ImGui::SliderFloat("offset", &m_params.colorOffset, 0.0f, 1.0f);
-    ImGui::SliderFloat("cycle speed", &m_colorCycleSpeed, -1.0f, 1.0f);
+    if (m_mode != ViewMode::Fractal3D && m_mode != ViewMode::Buddhabrot) {
+        bool smooth = m_params.flags & kFlagSmooth;
+        if (ImGui::Checkbox("smooth", &smooth)) m_params.flags ^= kFlagSmooth;
+    }
+    if (m_mode != ViewMode::Buddhabrot) {
+        ImGui::SliderFloat("density", &m_params.colorDensity, 0.05f, 8.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("offset", &m_params.colorOffset, 0.0f, 1.0f);
+        ImGui::SliderFloat("cycle speed", &m_colorCycleSpeed, -1.0f, 1.0f);
+    }
 
     ImGui::SeparatorText("export");
     if (ImGui::Button("screenshot (P)")) m_screenshotRequested = true;
     ImGui::SameLine();
     ImGui::Checkbox("include UI", &m_screenshotWithUi);
     if (!m_lastScreenshot.empty()) ImGui::TextDisabled("saved %s", m_lastScreenshot.c_str());
-
-    ImGui::Separator();
-    if (m_mode == ViewMode::Plane2D || m_mode == ViewMode::Buddhabrot)
-        ImGui::TextDisabled("drag: pan  scroll / Z X: zoom in/out\nWASD/arrows: pan");
-    else
-        ImGui::TextDisabled(m_mode == ViewMode::Fractal3D
-                                ? "drag: orbit grabbed point  right/shift-drag: pan\nscroll: zoom to cursor  Z X: zoom in/out\nWASD: fly  Q/E: down/up"
-                                : "drag: orbit  scroll / Z X: zoom in/out\nWASD: move target  Q/E: down/up");
-    ImGui::TextDisabled("1-4 / Tab: mode  P: screenshot");
     ImGui::End();
 }
 
@@ -478,6 +550,7 @@ void App::drawBuddhabrotUi() {
     auto limit = [](const char* label, uint32_t& v) {
         int i = int(v);
         if (ImGui::SliderInt(label, &i, 10, 50000, "%d", ImGuiSliderFlags_Logarithmic)) v = uint32_t(i);
+        ImGui::SetItemTooltip("- / + keys");
     };
     limit(s.nebula ? "red limit" : "iterations", s.limits[0]);
     if (s.nebula) {
@@ -611,7 +684,9 @@ bool App::frame() {
         if (m_autoRotate) m_logisticOrbit.yaw += 0.15f * dt;
         m_bif.highlightC = m_highlightR ? float(logisticToC(m_logisticR)) : 1e9f;
         updateScene(m_logisticOrbit);
-        m_bifurcation.update(m_ctx, m_params, m_scene, m_bif);
+        FractalParams plane = m_params;
+        plane.maxIter = m_logisticIter; // the logistic plane keeps its own iteration count
+        m_bifurcation.update(m_ctx, plane, m_scene, m_bif);
         m_bifurcation.compute(encoder);
         sceneDesc.depthStencilAttachment = &depth;
         wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&sceneDesc);

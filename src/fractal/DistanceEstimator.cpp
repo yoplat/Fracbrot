@@ -126,6 +126,17 @@ double deBicomplex(const MarchParams& m, dvec3 pos) {
     return std::max(d1, d2) * 0.70710678118654752;
 }
 
+// Unit direction in which the distance estimate grows fastest at `p` (away from the nearest
+// surface), by central differences at a fraction of the clearance `de`.
+dvec3 outwardNormal(const MarchParams& m, dvec3 p, double de) {
+    const double e = std::max(0.1 * de, 1e-12 * std::max(1.0, glm::length(p)));
+    const dvec3 g{distanceEstimate(m, p + dvec3(e, 0, 0)) - distanceEstimate(m, p - dvec3(e, 0, 0)),
+                  distanceEstimate(m, p + dvec3(0, e, 0)) - distanceEstimate(m, p - dvec3(0, e, 0)),
+                  distanceEstimate(m, p + dvec3(0, 0, e)) - distanceEstimate(m, p - dvec3(0, 0, e))};
+    const double len = glm::length(g);
+    return len > 0.0 && std::isfinite(len) ? g / len : dvec3(0.0);
+}
+
 } // namespace
 
 glm::dvec4 toSlice(const MarchParams& m, glm::dvec3 pos) {
@@ -179,8 +190,9 @@ std::optional<double> raycast(const MarchParams& m, glm::dvec3 origin, glm::dvec
     const double tFar = -b + s;
     if (tFar < 0.0) return std::nullopt;
 
+    // Same step budget as the shader, so the CPU hits what the screen shows.
     double t = std::max(-b - s, 0.0);
-    for (uint32_t i = 0; i < 4 * m.maxSteps; ++i) {
+    for (uint32_t i = 0; i < m.maxSteps; ++i) {
         const double d = distanceEstimate(m, origin + dir * t);
         if (d < std::max(t * pixelAngle * m.detail, 1e-15)) return t;
         t += d;
@@ -189,9 +201,54 @@ std::optional<double> raycast(const MarchParams& m, glm::dvec3 origin, glm::dvec
     return std::nullopt;
 }
 
+namespace {
+
+// Where to back off by `len` from `eye` when straight back (`back`) is blocked: away from the
+// nearest surface, at most halfway to whatever lies that way.
+dvec3 backOffStep(const MarchParams& m, dvec3 eye, double de, dvec3 back, double len, double pixelAngle,
+                  std::optional<double> behind) {
+    const dvec3 n = outwardNormal(m, eye, de);
+    if (n == dvec3(0.0)) return back * (behind ? std::min(len, 0.5 * *behind) : len);
+    const auto blocked = raycast(m, eye, n, pixelAngle);
+    return n * (blocked ? std::min(len, 0.5 * *blocked) : len);
+}
+
+} // namespace
+
 void zoomAlongRay(OrbitCamera& cam, const MarchParams& m, glm::dvec3 dir, double pixelAngle, double factor) {
-    const double ahead = raycast(m, cam.positionD(), dir, pixelAngle).value_or(cam.distance);
-    cam.translate(dir * ((1.0 - factor) * ahead));
+    const dvec3 eye = cam.positionD();
+    const double de = distanceEstimate(m, eye);
+    // A hit at 0 means the camera is inside the set; zoom by the focus then, so it can get out.
+    const std::optional<double> hit = raycast(m, eye, dir, pixelAngle);
+    const double ahead = hit && *hit > 0.0 ? *hit : cam.distance;
+    const double move = (1.0 - factor) * ahead; // along `dir`; < 0 backs off
+    dvec3 step = dir * move;
+    if (move < 0.0 && de > 0.0) {
+        // Backing off into a surface behind the camera would stop the zoom dead, or glue the
+        // camera to that surface (shortening the move to the clearance every frame converges
+        // onto it). The march behind can miss that surface (stepping over thin detail, or out
+        // of steps on a grazing ray), so a destination inside the set counts as blocked too,
+        // and so does one that gives up most of the clearance in a step much longer than what
+        // is left, but only deep in (clearance tiny next to the hit): further out the escape
+        // swings the view and would turn ordinary zoom-out notches into jumps.
+        // Over background (no hit) a pure back-off always retraces the zoom-in, so it stays.
+        const auto behind = raycast(m, eye, -dir, pixelAngle);
+        const double deDest = distanceEstimate(m, eye + step);
+        const bool deep = hit && de < 0.01 * ahead;
+        if ((behind && -move > 0.5 * *behind) || !(deDest > 0.0) || (deep && deDest < 0.5 * de && deDest < -0.1 * move))
+            step = backOffStep(m, eye, de, -dir, -move, pixelAngle, behind);
+    }
+    if (de > 0.0 && !(distanceEstimate(m, eye + step) > 0.0)) {
+        // The march stepped over thin detail. A move shorter than the clearance can't reach
+        // the surface if the estimate is a true bound; where it overestimates, halve until
+        // the camera stays outside, so the zoom still makes progress instead of none.
+        step *= std::min(1.0, 0.9 * de / glm::length(step));
+        for (int i = 0; i < 40 && !(distanceEstimate(m, eye + step) > 0.0); ++i) step *= 0.5;
+    }
+    cam.translate(step);
+    // Carry the remaining distance as the focus: zooming over background then shrinks (or
+    // grows) geometrically like a hit would, and zooming back out retraces the same steps.
+    cam.refocus(ahead - move);
 }
 
 double clearance(const OrbitCamera& cam, const MarchParams& m) {

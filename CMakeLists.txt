@@ -24,6 +24,7 @@ add_executable(fracbrot
   src/fractal/Buddhabrot.cpp
   src/fractal/DistanceEstimator.cpp
   src/fractal/Mandel2D.cpp
+  src/fractal/Navigator3D.cpp
   src/fractal/OrbitTracer.cpp
   src/fractal/ReferenceOrbit.cpp
   src/math/BigFixed.cpp
@@ -65,4 +66,15 @@ if(NOT EMSCRIPTEN)
   target_link_libraries(fracbrot_distance_tests PRIVATE fracbrot_deps)
   fracbrot_embed_shaders(fracbrot_distance_tests ${CMAKE_SOURCE_DIR}/shaders)
   add_test(NAME fracbrot_distance_tests COMMAND fracbrot_distance_tests)
+
+  # 3D navigation and the iteration keys (no GPU work; Raymarcher.cpp has applyFormulaDefaults).
+  add_executable(fracbrot_navigation_tests tests/test_navigation.cpp src/fractal/Navigator3D.cpp
+                                           src/fractal/DistanceEstimator.cpp src/fractal/Raymarcher.cpp)
+  target_include_directories(fracbrot_navigation_tests PRIVATE src)
+  target_link_libraries(fracbrot_navigation_tests PRIVATE fracbrot_deps)
+  fracbrot_embed_shaders(fracbrot_navigation_tests ${CMAKE_SOURCE_DIR}/shaders)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(fracbrot_navigation_tests PRIVATE -Wall -Wextra)
+  endif()
+  add_test(NAME fracbrot_navigation_tests COMMAND fracbrot_navigation_tests)
 endif()

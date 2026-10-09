@@ -27,6 +27,14 @@ ln -sf build/release/compile_commands.json compile_commands.json
 
 Generated shader headers live in `build/<preset>/generated`, so configure/build once before opening the editor.
 
+## Controls
+
+The panel's Controls section lists the current mode's bindings. In every mode: 1-4 / Tab switch
+mode, R resets the current view, P saves a screenshot, - / + (the - and = keys) step the
+iterations (held keys repeat), Z / X zoom in / out and W A S D move. 2D and Buddhabrot: drag
+pans, scroll zooms at the cursor, O traces the orbit under the cursor (2D). Logistic map: drag
+orbits, scroll zooms, Q / E move down / up.
+
 ## Deep zoom
 
 Below scale 1e-3 the 2D view switches to perturbation rendering: the view center is an
@@ -48,8 +56,11 @@ Formulas (3D mode, `--formula N`): quaternion Mandelbrot / Julia, Mandelbulb, bi
 The hypercomplex squaring (x² − y² − z² − w², 2(xy + zw), 2(xz − yw), 2(xw + yz)) is the
 commuting-units system behind Yann Le Bihan's "quaternion" video.
 
-Navigation: scroll zooms toward the surface under the cursor, drag orbits the grabbed point,
-right/shift-drag pans, WASD/QE fly with speed scaled to the distance to the surface.
+Navigation: scroll zooms toward the surface under the cursor (Z / X toward the screen center),
+drag orbits the grabbed point (half a turn per screen-height drag), shift-drag pans so the grabbed
+point follows the cursor, W A S D fly and Q / E move down / up, with speeds scaled to the distance
+to the surface. Over background, zooming scales the focus distance instead, so it converges and
+zooming back out retraces it. The camera never moves inside the set.
 Below 0.01 from the surface the quaternion family and hypercomplex formulas switch to
 perturbation (offsets from a double-precision reference orbit), so close-ups stay sharp down
 to ~1e-8. When the view stops moving it refines with up to 16 jittered samples
